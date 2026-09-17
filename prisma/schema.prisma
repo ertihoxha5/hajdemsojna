@@ -1,0 +1,538 @@
+// Hajde Msojna — data model
+//
+// The schema is deliberately portable: no database-specific enums or JSON
+// columns, so moving from SQLite (local development) to PostgreSQL is a
+// one-line provider change plus a new DATABASE_URL. Fields that hold a fixed
+// set of values are stored as String and validated with Zod at the edge
+// (see src/lib/validation.ts).
+//
+// Every user-owned row carries userId and is always queried through the
+// helpers in src/server/, which scope by the authenticated session.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  // Change to "postgresql" for production; the URL lives in prisma.config.ts.
+  provider = "sqlite"
+}
+
+/* ============================================================
+   Identity
+   ============================================================ */
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?
+  name         String
+  surname      String    @default("")
+  image        String?
+  createdAt    DateTime  @default(now())
+
+  profile       UserProfile?
+  settings      UserSettings?
+  preference    StudyPreference?
+  accounts      Account[]
+  sessions      Session[]
+  subjects      Subject[]
+  lectures      Lecture[]
+  availability  Availability[]
+  studySessions StudySession[]
+  assignments   Assignment[]
+  exams         Exam[]
+  grades        Grade[]
+  goals         StudyGoal[]
+  materials     Material[]
+  notes         Note[]
+  ownedGroups   StudyGroup[]       @relation("GroupOwner")
+  memberships   StudyGroupMember[]
+  groupMessages GroupMessage[]
+  sentRequests  Friendship[]       @relation("FriendRequester")
+  gotRequests   Friendship[]       @relation("FriendAddressee")
+  conversations AIConversation[]
+  notifications Notification[]
+}
+
+/// OAuth accounts (Google). Credentials logins have no row here.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+/// Server-side session records. The cookie holds only the opaque token.
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  userAgent    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model UserProfile {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  /// "universitet" | "shkolle" | "bootcamp" | "vetemesim"
+  learnerType String    @default("universitet")
+  institution String    @default("")
+  year        String    @default("")
+  avatarTone  Int       @default(0)
+  streak      Int       @default(0)
+  onboardedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  /// "system" | "light" | "dark"
+  theme String @default("system")
+  /// "sq" | "en"
+  language String @default("sq")
+
+  /// "anthropic" | "openai" | "google" — null means "use the server default"
+  aiProvider   String?
+  aiModel      String?
+  /// "low" | "balanced" | "creative"
+  aiCreativity String  @default("balanced")
+
+  /// Bring-your-own key, AES-256-GCM. Never returned to the browser.
+  aiKeyCipher String?
+  aiKeyIv     String?
+  aiKeyTag    String?
+  aiKeyLast4  String?
+  aiKeySetAt  DateTime?
+
+  shareStatus   Boolean @default(true)
+  shareSchedule Boolean @default(true)
+  shareProgress Boolean @default(true)
+  shareGrades   Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StudyPreference {
+  id               String @id @default(cuid())
+  userId           String @unique
+  sessionLength    Int    @default(45)
+  breakLength      Int    @default(15)
+  maxMinutesPerDay Int    @default(180)
+  /// "mengjes" | "mbremje" | "fleksibil"
+  rhythm           String @default("fleksibil")
+  /// Comma-separated Monday-first day indexes, e.g. "5,6"
+  freeDays         String @default("6")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/* ============================================================
+   Academics
+   ============================================================ */
+
+model Subject {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  short        String   @default("")
+  tone         Int      @default(0)
+  teacher      String   @default("")
+  room         String   @default("")
+  difficulty   Int      @default(3)
+  importance   Int      @default(3)
+  targetGrade  Float    @default(9)
+  currentGrade Float    @default(0)
+  credits      Int      @default(6)
+  createdAt    DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics        Topic[]
+  lectures      Lecture[]
+  studySessions StudySession[]
+  assignments   Assignment[]
+  exams         Exam[]
+  grades        Grade[]
+  materials     Material[]
+  notes         Note[]
+  groups        StudyGroup[]
+
+  @@index([userId])
+}
+
+model Topic {
+  id        String @id @default(cuid())
+  subjectId String
+  name      String
+  /// 0 = nuk e di, 1 = pak, 2 = e kuptoj, 3 = e zotëroj
+  mastery   Int    @default(0)
+  minutes   Int    @default(0)
+  position  Int    @default(0)
+
+  subject    Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  examTopics ExamTopic[]
+
+  @@index([subjectId])
+}
+
+model Lecture {
+  id        String @id @default(cuid())
+  userId    String
+  subjectId String
+  /// 0 = Monday … 6 = Sunday
+  day       Int
+  start     String
+  end       String
+  /// "ligjerate" | "ushtrime" | "lab" | "seminar"
+  kind      String @default("ligjerate")
+  room      String @default("")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Availability {
+  id       String @id @default(cuid())
+  userId   String
+  day      Int
+  fromTime String
+  toTime   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model StudySession {
+  id        String  @id @default(cuid())
+  userId    String
+  subjectId String?
+  /// "mesim" | "perseritje" | "detyre" | "pushim" | "grup" | "provim-prep"
+  kind      String  @default("mesim")
+  title     String
+  objective String  @default("")
+  /// "YYYY-MM-DD" in the student's own local time
+  date      String
+  start     String
+  minutes   Int
+  /// "planned" | "done" | "missed" | "skipped"
+  status    String  @default("planned")
+  why       String  @default("")
+  rating    Int?
+  understanding Int?
+  /// Assignment or exam this session serves
+  linkedId  String?
+  groupId   String?
+  /// "ai" when the plan came from the model, "rule" from the local planner
+  source    String   @default("rule")
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+}
+
+model Assignment {
+  id          String   @id @default(cuid())
+  userId      String
+  subjectId   String
+  title       String
+  detail      String   @default("")
+  /// "YYYY-MM-DD"
+  due         String
+  progress    Int      @default(0)
+  estMinutes  Int      @default(120)
+  /// "low" | "normal" | "high"
+  priority    String   @default("normal")
+  done        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  steps   AssignmentStep[]
+
+  @@index([userId])
+}
+
+model AssignmentStep {
+  id           String  @id @default(cuid())
+  assignmentId String
+  label        String
+  done         Boolean @default(false)
+  position     Int     @default(0)
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId])
+}
+
+model Exam {
+  id             String @id @default(cuid())
+  userId         String
+  subjectId      String
+  title          String
+  /// "kolokvium" | "final" | "provim"
+  kind           String @default("kolokvium")
+  date           String
+  start          String @default("09:00")
+  room           String @default("")
+  targetGrade    Float  @default(9)
+  studiedMinutes Int    @default(0)
+  importance     Int    @default(3)
+  notes          String @default("")
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  topics  ExamTopic[]
+
+  @@index([userId])
+}
+
+model ExamTopic {
+  examId  String
+  topicId String
+
+  exam  Exam  @relation(fields: [examId], references: [id], onDelete: Cascade)
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([examId, topicId])
+}
+
+model Grade {
+  id        String @id @default(cuid())
+  userId    String
+  subjectId String
+  /// "kuiz" | "detyre" | "gjysmefinal" | "final" | "projekt" | "pjesemarrje"
+  kind      String
+  title     String
+  value     Float
+  /// Share of the final grade, 0..1
+  weight    Float  @default(0.1)
+  date      String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model StudyGoal {
+  id     String @id @default(cuid())
+  userId String
+  /// "kaloj-provimet" | "permiresoj-notat" | "mesoj-rregullisht" | "matura" | "afati" | "detyrat-me-kohe"
+  key    String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+/* ============================================================
+   Content
+   ============================================================ */
+
+model Material {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String?
+  title     String
+  /// "pdf" | "ppt" | "link" | "foto" | "dok" | "txt"
+  kind      String   @default("pdf")
+  meta      String   @default("")
+  /// Path on disk, outside /public — served only through an authorised route
+  storageKey String?
+  mimeType   String?
+  sizeBytes  Int?
+  /// Extracted plain text, used as AI context
+  extracted  String?
+  summary    String?
+  url        String?
+  createdAt  DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  subjectId String?
+  title     String
+  body      String   @default("")
+  pinned    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+/* ============================================================
+   Social
+   ============================================================ */
+
+model StudyGroup {
+  id         String   @id @default(cuid())
+  name       String
+  about      String   @default("")
+  subjectId  String?
+  subjectName String  @default("")
+  ownerId    String
+  inviteCode String   @unique
+  sharedNotes String  @default("")
+  createdAt  DateTime @default(now())
+
+  owner    User               @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  subject  Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  members  StudyGroupMember[]
+  messages GroupMessage[]
+  sessions GroupSession[]
+}
+
+model StudyGroupMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  userId   String
+  /// "owner" | "member"
+  role     String   @default("member")
+  /// "meson" | "pushim" | "offline"
+  state    String   @default("offline")
+  lastSeen DateTime @default(now())
+  joinedAt DateTime @default(now())
+
+  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model GroupMessage {
+  id         String   @id @default(cuid())
+  groupId    String
+  userId     String?
+  authorName String
+  text       String
+  isAI       Boolean  @default(false)
+  /// "text" | "plan" | "quiz" | "system"
+  kind       String   @default("text")
+  /// Serialised quiz payload when kind = "quiz"
+  payload    String?
+  createdAt  DateTime @default(now())
+
+  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([groupId, createdAt])
+}
+
+model GroupSession {
+  id      String @id @default(cuid())
+  groupId String
+  topic   String
+  date    String
+  start   String
+  minutes Int    @default(45)
+
+  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+model Friendship {
+  id          String   @id @default(cuid())
+  requesterId String
+  addresseeId String
+  /// "pending" | "accepted" | "blocked"
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+
+  requester User @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+}
+
+/* ============================================================
+   AI
+   ============================================================ */
+
+model AIConversation {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String   @default("Bisedë e re")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AIMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model AIMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  /// "user" | "assistant"
+  role           String
+  content        String
+  /// Serialised extras (quiz, plan) rendered by the client
+  payload        String?
+  createdAt      DateTime @default(now())
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String   @default("")
+  /// "info" | "ok" | "warn" | "ai"
+  tone      String   @default("info")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
