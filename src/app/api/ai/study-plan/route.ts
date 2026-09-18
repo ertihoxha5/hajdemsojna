@@ -7,7 +7,7 @@ import { generateStudyPlan } from "@/lib/ai/tasks";
 import { AIError } from "@/lib/ai/types";
 import { addDays, dayIndex, minutesOf } from "@/lib/date";
 import { isoDate } from "@/lib/validation";
-import { ERRORS, jsonError } from "@/lib/api";
+import { ERRORS, enforceRateLimit, jsonError } from "@/lib/api";
 import { newServerId } from "@/lib/id-server";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +36,9 @@ export async function POST(request: Request) {
   } catch {
     return jsonError(ERRORS.unauthorized, 401, "unauthorized");
   }
+
+  const limited = enforceRateLimit(user.id, "plan");
+  if (limited) return limited;
 
   let raw: unknown;
   try {

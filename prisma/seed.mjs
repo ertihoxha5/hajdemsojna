@@ -260,6 +260,68 @@ async function main() {
     });
   }
 
+  // ── Flashcards, at three different stages of being learned ───────────
+  //
+  // A demo deck where every card is new would make the review screen look
+  // like a to-do list. These are spread across new, learning and mature so
+  // the strength figure and the intervals mean something on first open.
+  const CARDS = [
+    [0, "Çfarë është kompleksiteti O(n log n)?", "Rritje pak më e shpejtë se lineare — tipike për renditjen me krahasim.", 0, 0],
+    [0, "Kur është e dobishme tabela hash?", "Kur duhet kërkim, futje dhe fshirje afërsisht në kohë konstante.", 6, 2],
+    [0, "Dallimi mes BFS dhe DFS?", "BFS shkon nivel pas niveli, DFS ndjek një degë deri në fund.", 34, 5],
+    [1, "Çfarë mat derivati?", "Shpejtësinë e ndryshimit të funksionit në një pikë.", 0, 0],
+    [1, "Kur ekziston limiti i një funksioni?", "Kur limiti nga e majta dhe nga e djathta janë të barabartë.", 12, 3],
+    [2, "Çfarë është normalizimi 3NF?", "Çdo atribut jo-çelës varet vetëm nga çelësi primar.", 0, 0],
+    [2, "Për çfarë shërben indeksi në bazë të dhënash?", "Për ta bërë kërkimin të shpejtë, me koston e shkrimeve pak më të ngadalta.", 21, 4],
+  ];
+
+  for (const [si, front, back, intervalDays, repetitions] of CARDS) {
+    await db.flashcard.create({
+      data: {
+        userId: user.id,
+        subjectId: subjectIds[si],
+        front,
+        back,
+        source: "manual",
+        // A new card is due today; a scheduled one is spread across the
+        // interval it earned, so they do not all come back on the same day.
+        due: iso(intervalDays === 0 ? 0 : Math.floor(intervalDays / 3)),
+        intervalDays,
+        repetitions,
+        easeFactor: 2.5,
+      },
+    });
+  }
+
+  // ── One finished quiz, so readiness has real recall to work from ─────
+  const QUIZ = [
+    ["Cila strukturë jep kërkim O(1) mesatarisht?", ["Lista e lidhur", "Tabela hash", "Pema binare", "Vargu i renditur"], 1, 1],
+    ["Sa është kompleksiteti i renditjes me bashkim?", ["O(n)", "O(n log n)", "O(n²)", "O(log n)"], 1, 1],
+    ["Çfarë përdor BFS për të mbajtur nyjet?", ["Stek", "Radhë", "Grumbull", "Hartë"], 1, 0],
+  ];
+
+  await db.quizAttempt.create({
+    data: {
+      userId: user.id,
+      subjectId: subjectIds[0],
+      source: "ai",
+      total: QUIZ.length,
+      correct: QUIZ.filter(([, , correct, chosen]) => correct === chosen).length,
+      seconds: 145,
+      date: iso(-2),
+      answers: {
+        create: QUIZ.map(([question, options, correctIndex, chosenIndex], position) => ({
+          question,
+          options: JSON.stringify(options),
+          correctIndex,
+          chosenIndex,
+          correct: correctIndex === chosenIndex,
+          position,
+        })),
+      },
+    },
+  });
+
   console.log(`Seed gati.\n  Email:      ${EMAIL}\n  Fjalëkalimi: ${PASSWORD}`);
 }
 

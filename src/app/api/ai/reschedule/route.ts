@@ -6,7 +6,7 @@ import { getToday } from "@/lib/server-date";
 import { suggestReschedule } from "@/lib/ai/tasks";
 import { AIError } from "@/lib/ai/types";
 import { addDays, dayIndex, minutesOf } from "@/lib/date";
-import { ERRORS, jsonError } from "@/lib/api";
+import { ERRORS, enforceRateLimit, jsonError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,6 +20,9 @@ const bodySchema = z.object({ sessionId: z.string().min(1) });
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
+
+    const limited = enforceRateLimit(user.id, "reschedule");
+    if (limited) return limited;
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) return jsonError(ERRORS.invalid, 400, "invalid_input");

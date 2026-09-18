@@ -11,7 +11,10 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:seed": "node prisma/seed.mjs",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "test": "node --import ./tests/register.mjs --test --test-concurrency=1 --test-reporter=spec \"tests/**/*.test.ts\"",
+    "test:watch": "node --import ./tests/register.mjs --test --watch \"tests/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { AlertCircle, ArrowRight, Check, Eye, EyeOff } from "lucide-react";
-import { signInAction, signUpAction, type AuthResult } from "@/server/auth-actions";
+import {
+  forgotPasswordAction,
+  resetPasswordAction,
+  signInAction,
+  signUpAction,
+  type AuthResult,
+  type ForgotResult,
+} from "@/server/auth-actions";
 import { cx } from "@/components/ui";
 
 /* ============================================================
@@ -173,7 +180,7 @@ export function SignInForm({ next }: { next?: string }) {
           />
           Më mbaj të kyçur
         </label>
-        <Link href="/signin" className="text-[13px] text-brand hover:underline">
+        <Link href="/harrova" className="text-[13px] text-brand hover:underline">
           Keni harruar fjalëkalimin?
         </Link>
       </div>
@@ -290,6 +297,118 @@ export function SignUpForm() {
           Kyçu
         </Link>
       </p>
+    </form>
+  );
+}
+
+/* ============================================================
+   Forgot password
+   ============================================================ */
+
+export function ForgotPasswordForm() {
+  const [result, action] = useActionState<ForgotResult | null, FormData>(
+    forgotPasswordAction,
+    null
+  );
+  const errors = result?.errors ?? {};
+
+  // The confirmation is deliberately the same whether or not the address has
+  // an account, so this screen cannot be used to discover who is registered.
+  if (result?.submitted) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="anim-pop flex items-start gap-2.5 rounded-[10px] border border-ok/30 bg-ok-soft px-3.5 py-3">
+          <Check size={16} className="mt-0.5 shrink-0 text-ok" />
+          <div>
+            <p className="text-[13.5px] font-medium text-ink">Kontrollo email-in</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
+              Nëse ekziston një llogari me atë adresë, i dërguam një link për
+              rivendosjen e fjalëkalimit. Linku skadon pas një ore.
+            </p>
+          </div>
+        </div>
+
+        {result.logged && (
+          <div className="rounded-[10px] border border-warn/30 bg-warn-soft px-3.5 py-3">
+            <p className="text-[13px] leading-relaxed text-muted">
+              <span className="font-medium text-ink">Vetëm në zhvillim:</span> nuk
+              ka shërbim email-i të konfiguruar, prandaj linku u shkrua në
+              konsolën e serverit.
+            </p>
+          </div>
+        )}
+
+        <Link
+          href="/signin"
+          className="text-center text-[13.5px] font-medium text-brand hover:underline"
+        >
+          Kthehu te kyçja
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <form action={action} className="flex flex-col gap-4">
+      <FormError message={errors.form} />
+
+      <Field
+        label="Email"
+        name="email"
+        type="email"
+        placeholder="studenti@shembull.com"
+        autoComplete="email"
+        error={errors.email}
+      />
+
+      <SubmitButton>Dërgo linkun</SubmitButton>
+
+      <p className="text-center text-[13.5px] text-muted">
+        E kujtove?{" "}
+        <Link href="/signin" className="font-medium text-brand hover:underline">
+          Kyçu
+        </Link>
+      </p>
+    </form>
+  );
+}
+
+/* ============================================================
+   Reset password
+   ============================================================ */
+
+export function ResetPasswordForm({ token }: { token: string }) {
+  const [result, action] = useActionState<AuthResult | null, FormData>(
+    resetPasswordAction,
+    null
+  );
+  const errors = result?.errors ?? {};
+
+  return (
+    <form action={action} className="flex flex-col gap-4">
+      <FormError message={errors.form} />
+      <input type="hidden" name="token" value={token} />
+
+      <PasswordField
+        label="Fjalëkalimi i ri"
+        name="password"
+        placeholder="••••••••"
+        autoComplete="new-password"
+        error={errors.password}
+      />
+      <PasswordField
+        label="Përsërite fjalëkalimin"
+        name="confirm"
+        placeholder="••••••••"
+        autoComplete="new-password"
+        error={errors.confirm}
+      />
+
+      <p className="text-[12.5px] leading-relaxed text-faint">
+        Pas ndryshimit do të dilesh nga të gjitha pajisjet e tjera.
+      </p>
+
+      <SubmitButton>Ruaj fjalëkalimin</SubmitButton>
     </form>
   );
 }

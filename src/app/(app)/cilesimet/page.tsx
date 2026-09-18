@@ -3,9 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, LogOut, Moon, RotateCcw, Sparkles, Sun, Trash } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronRight,
+  Download,
+  LogOut,
+  Moon,
+  RotateCcw,
+  Sparkles,
+  Sun,
+  Trash,
+} from "lucide-react";
 import { useStore } from "@/lib/store";
 import { signOutAction } from "@/server/auth-actions";
+import { VerifyEmailBanner } from "@/components/app/verify-email-banner";
 import { DAYS_LONG } from "@/lib/date";
 import type { DayIndex } from "@/lib/types";
 import {
@@ -263,6 +274,8 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          <VerifyEmailBanner />
+
           <Card>
             <h2 className="text-[15px] font-semibold text-ink">Llogaria dhe të dhënat</h2>
             <p className="mt-1 text-[13px] leading-relaxed text-muted">
@@ -289,6 +302,31 @@ export default function SettingsPage() {
                 <Trash size={13} />
                 Fshij llogarinë
               </Button>
+            </div>
+
+            {/* Being able to leave with the data is the other half of being
+                able to delete the account. Plain links, so the browser handles
+                the download and nothing has to be held in memory. */}
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="text-[13px] font-medium text-ink">Merri të dhënat me vete</p>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+                Shkarko gjithçka që ke shtuar, ose vetëm orarin për ta hapur në
+                Google Calendar, Apple Calendar apo Outlook.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a href="/api/account/export" download>
+                  <Button variant="secondary" size="sm" type="button">
+                    <Download size={13} />
+                    Shkarko të dhënat (JSON)
+                  </Button>
+                </a>
+                <a href="/api/calendar" download>
+                  <Button variant="secondary" size="sm" type="button">
+                    <CalendarDays size={13} />
+                    Shkarko orarin (.ics)
+                  </Button>
+                </a>
+              </div>
             </div>
           </Card>
         </div>

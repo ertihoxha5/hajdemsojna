@@ -75,6 +75,21 @@ export const signUpSchema = z
     path: ["confirm"],
   });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Email-i nuk është valid"),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(10, "Linku nuk është valid"),
+    password: passwordSchema,
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, {
+    message: "Fjalëkalimet nuk përputhen",
+    path: ["confirm"],
+  });
+
 export const signInSchema = z.object({
   email: z.string().trim().toLowerCase().email("Email-i nuk është valid"),
   password: z.string().min(1, "Shkruaj fjalëkalimin"),
@@ -275,6 +290,70 @@ export const aiQuizSchema = z.object({
   });
 
 export type AIQuiz = z.infer<typeof aiQuizSchema>;
+
+/**
+ * Flashcards the model returns. Kept deliberately tight: a card whose front is
+ * a paragraph is not a flashcard, and the length caps are what stop the model
+ * from drifting into summaries.
+ */
+export const aiFlashcardsSchema = z.object({
+  cards: z
+    .array(
+      z.object({
+        front: z.string().trim().min(1).max(300),
+        back: z.string().trim().min(1).max(600),
+        topic: z.string().trim().max(120).default(""),
+      })
+    )
+    .min(1)
+    .max(30),
+});
+
+export type AIFlashcards = z.infer<typeof aiFlashcardsSchema>;
+
+/* ── Recall: flashcards and quiz attempts ────────────────── */
+
+export const recallGrade = z.enum(["nuk-e-dita", "veshtire", "mire", "lehte"]);
+
+export const flashcardInput = z.object({
+  front: z.string().trim().min(1, "Pyetja mungon").max(300),
+  back: z.string().trim().min(1, "Përgjigjja mungon").max(600),
+  subjectId: z.string().min(1).nullable().optional(),
+  topicId: z.string().min(1).nullable().optional(),
+});
+
+export const flashcardReviewInput = z.object({
+  cardId: z.string().min(1),
+  recall: recallGrade,
+});
+
+export const flashcardGenerateInput = z.object({
+  subjectId: z.string().min(1),
+  topicIds: z.array(z.string()).max(30).optional(),
+  materialId: z.string().min(1).optional(),
+  count: z.number().int().min(1).max(20).optional(),
+});
+
+export const quizAttemptInput = z.object({
+  subjectId: z.string().min(1).nullable().optional(),
+  materialId: z.string().min(1).nullable().optional(),
+  source: z.enum(["ai", "material"]).default("ai"),
+  seconds: z.number().int().min(0).max(86_400).default(0),
+  answers: z
+    .array(
+      z.object({
+        question: z.string().trim().min(1).max(500),
+        options: z.array(z.string().trim().max(300)).min(2).max(6),
+        correctIndex: z.number().int().min(0).max(5),
+        /** -1 means the student skipped it. */
+        chosenIndex: z.number().int().min(-1).max(5),
+        explanation: z.string().trim().max(300).default(""),
+        topicName: z.string().trim().max(120).default(""),
+      })
+    )
+    .min(1)
+    .max(30),
+});
 
 export const aiRescheduleSchema = z.object({
   date: isoDate,

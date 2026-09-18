@@ -40,6 +40,12 @@ export function minutesStudied(state: AppState, subjectId: string, since?: strin
 /**
  * Exam readiness blends what the student has mastered, how much time they have
  * actually put in, and how they are performing in the subject so far.
+ *
+ * When the student has actually sat quizzes in the subject, demonstrated
+ * recall displaces some of the weight on self-reported mastery — marking a
+ * topic "e zotëroj" is a claim, while answering questions about it is
+ * evidence. A subject with no attempts keeps the original weighting exactly,
+ * so a student who never quizzes is neither rewarded nor punished for it.
  */
 export function examReadiness(state: AppState, exam: Exam): number {
   const subject = state.subjects.find((s) => s.id === exam.subjectId);
@@ -51,7 +57,15 @@ export function examReadiness(state: AppState, exam: Exam): number {
   const targetMinutes = topics.length * 45;
   const time = clamp(exam.studiedMinutes / Math.max(1, targetMinutes));
   const grade = clamp(subject.currentGrade / 10);
-  return Math.round((mastery * 0.6 + time * 0.25 + grade * 0.15) * 100);
+
+  const recall = state.quizAccuracy?.[subject.id];
+  if (recall == null) {
+    return Math.round((mastery * 0.6 + time * 0.25 + grade * 0.15) * 100);
+  }
+
+  return Math.round(
+    (mastery * 0.45 + time * 0.2 + grade * 0.1 + clamp(recall) * 0.25) * 100
+  );
 }
 
 export function examTopicsDone(state: AppState, exam: Exam) {

@@ -41,6 +41,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { AgendaRow } from "@/components/app/session-row";
+import { DueCardsCallout } from "@/components/app/review-session";
 
 export default function TodayPage() {
   const { state, dispatch, today, now } = useStore();
@@ -279,6 +280,10 @@ export default function TodayPage() {
               </div>
             </div>
           </Card>
+
+          {/* Spaced repetition is time-sensitive in a way nothing else here is:
+              a card reviewed on its due day is the whole point of the schedule. */}
+          <DueCardsCallout due={state.recall?.due ?? 0} />
 
           {/* Where attention should go — computed from the student's own rows */}
           {insight && (

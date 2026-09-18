@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowUp,
+  CalendarPlus,
   Copy,
   LogOut,
   Pause,
@@ -16,13 +17,16 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { dur } from "@/lib/date";
+import { dur, longDate } from "@/lib/date";
 import type { QuizQuestion } from "@/lib/types";
 import {
   Avatar,
   Badge,
   Button,
   Card,
+  Field,
+  Input,
+  Modal,
   Progress,
   SubjectDot,
   Tabs,
@@ -278,6 +282,8 @@ export default function GroupRoomPage({ params }: { params: Promise<{ id: string
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <div className="flex min-w-0 flex-col gap-4">
           <FocusTimer minutes={group.nextSession?.minutes ?? 45} topic={group.nextSession?.topic} />
+
+          <ScheduleSession groupId={group.id} next={group.nextSession ?? null} />
 
           <Card padded={false} className="flex min-h-[460px] flex-col">
             <div className="px-4 pt-3">
@@ -594,5 +600,124 @@ function Message({ message }: { message: WireMessage }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ============================================================
+   Scheduling
+   ============================================================ */
+
+/**
+ * Puts a time on the group's next session.
+ *
+ * Any member can schedule: a study group where only the owner may propose a
+ * time is not how students actually use one. The new session is announced in
+ * the feed by the route, so nobody has to be told separately.
+ */
+function ScheduleSession({
+  groupId,
+  next,
+}: {
+  groupId: string;
+  next: { topic: string; date: string; start: string; minutes: number } | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [topic, setTopic] = useState("");
+  const [date, setDate] = useState("");
+  const [start, setStart] = useState("18:00");
+  const [minutes, setMinutes] = useState(45);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    if (!topic.trim() || !date) return;
+    setBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/groups/${groupId}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic, date, start, minutes }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Nuk u ruajt dot.");
+        return;
+      }
+
+      setOpen(false);
+      setTopic("");
+      setDate("");
+      router.refresh();
+    } catch {
+      setError("Lidhja dështoi. Provo përsëri.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Card className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[13px] font-medium text-ink">
+            {next ? next.topic : "Asnjë sesion i planifikuar"}
+          </p>
+          <p className="mt-0.5 text-[12.5px] text-muted">
+            {next
+              ? `${longDate(next.date)} në ${next.start} · ${dur(next.minutes)}`
+              : "Vendosni një orë bashkë, që të mos mbetet vetëm një ide."}
+          </p>
+        </div>
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          <CalendarPlus size={13} />
+          Planifiko
+        </Button>
+      </Card>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Planifiko sesion">
+        <div className="flex flex-col gap-3">
+          <Field label="Tema">
+            <Input
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="Përsëritje për kolokviumin"
+              autoFocus
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Data">
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </Field>
+            <Field label="Ora">
+              <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Sa minuta">
+            <Input
+              type="number"
+              min={10}
+              max={300}
+              value={minutes}
+              onChange={(e) => setMinutes(Number(e.target.value))}
+            />
+          </Field>
+
+          {error && <p className="text-[13px] text-bad">{error}</p>}
+
+          <div className="mt-1 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Anulo
+            </Button>
+            <Button onClick={save} disabled={busy || !topic.trim() || !date}>
+              {busy ? "Po ruaj…" : "Planifiko"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

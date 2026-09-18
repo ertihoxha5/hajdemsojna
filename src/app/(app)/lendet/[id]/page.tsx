@@ -667,7 +667,7 @@ function AITab({ subjectId }: { subjectId: string }) {
         {quiz.questions && (
           <Card className="anim-in" padded={false}>
             <div className="p-4">
-              <Quiz questions={quiz.questions} />
+              <Quiz questions={quiz.questions} subjectId={subjectId} />
             </div>
           </Card>
         )}

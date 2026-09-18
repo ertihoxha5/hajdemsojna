@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/session";
 import { testConnection } from "@/lib/ai/tasks";
 import { AIError } from "@/lib/ai/types";
-import { ERRORS, jsonError } from "@/lib/api";
+import { ERRORS, enforceRateLimit, jsonError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,6 +11,9 @@ export const runtime = "nodejs";
 export async function POST() {
   try {
     const user = await requireUser();
+
+    const limited = enforceRateLimit(user.id, "keyTest");
+    if (limited) return limited;
     const result = await testConnection(user.id);
     return NextResponse.json({ ...result, message: "Lidhja me AI funksionon." });
   } catch (error) {

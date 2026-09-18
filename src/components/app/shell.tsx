@@ -60,6 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const openCount = openAssignments(state, today).length;
   const examCount = state.exams.filter((e) => e.date >= today).length;
+  const dueCards = state.recall?.due ?? 0;
 
   const main: NavItem[] = useMemo(
     () => [
@@ -67,13 +68,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       { href: "/orari", label: "Orari", icon: CalendarDays },
       { href: "/plani", label: "Plani", icon: WandSparkles },
       { href: "/lendet", label: "Lëndët", icon: BookOpen },
+      { href: "/perserit", label: "Përsëritja", icon: Layers, badge: dueCards },
       { href: "/detyrat", label: "Detyrat", icon: ListTodo, badge: openCount },
       { href: "/provimet", label: "Provimet", icon: GraduationCap, badge: examCount },
       { href: "/mso-bashke", label: "Mso Bashkë", icon: Users },
       { href: "/ai", label: "Asistenti AI", icon: Sparkles },
       { href: "/progresi", label: "Progresi", icon: TrendingUp },
     ],
-    [openCount, examCount]
+    [openCount, examCount, dueCards]
   );
 
   const secondary: NavItem[] = [

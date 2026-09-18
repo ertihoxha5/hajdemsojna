@@ -52,6 +52,10 @@ export interface StudentContext {
     missedRecently: number;
     streak: number;
   };
+  recall: {
+    cardsDue: number;
+    cardsTotal: number;
+  };
   goals: string[];
   availability: {
     windows: { day: string; from: string; to: string }[];
@@ -86,7 +90,7 @@ export async function buildStudentContext(
   const weekAgo = addDays(today, -7);
   const horizon = addDays(today, 30);
 
-  const [user, subjects, lectures, assignments, exams, sessions, goals, availability, pref] =
+  const [user, subjects, lectures, assignments, exams, sessions, goals, availability, pref, cardsDue, cardsTotal] =
     await Promise.all([
       db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } }),
       db.subject.findMany({
@@ -104,6 +108,10 @@ export async function buildStudentContext(
       db.studyGoal.findMany({ where: { userId } }),
       db.availability.findMany({ where: { userId } }),
       db.studyPreference.findUnique({ where: { userId } }),
+      // Counts, not rows: the assistant needs to know the student has revision
+      // waiting, not what is on every card.
+      db.flashcard.count({ where: { userId, suspended: false, due: { lte: today } } }),
+      db.flashcard.count({ where: { userId } }),
     ]);
 
   const subjectById = new Map(subjects.map((s) => [s.id, s]));
@@ -192,6 +200,8 @@ export async function buildStudentContext(
       streak: 0,
     },
 
+    recall: { cardsDue, cardsTotal },
+
     goals: goals.map((g) => g.key),
 
     availability: {
@@ -268,6 +278,12 @@ export function renderContext(ctx: StudentContext): string {
   lines.push(
     `\nJAVA E FUNDIT: ${dur(p.minutesThisWeek)} mësim, ${p.sessionsDone}/${p.sessionsPlanned} sesione të përfunduara, ${p.missedRecently} të humbura.`
   );
+
+  if (ctx.recall.cardsTotal) {
+    lines.push(
+      `\nPËRSËRITJA: ${ctx.recall.cardsDue} karta për sot nga ${ctx.recall.cardsTotal} gjithsej.`
+    );
+  }
 
   if (ctx.goals.length) lines.push(`OBJEKTIVAT: ${ctx.goals.join(", ")}.`);
 

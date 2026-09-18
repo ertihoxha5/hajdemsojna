@@ -26,6 +26,9 @@ datasource db {
 model User {
   id           String    @id @default(cuid())
   email        String    @unique
+  /// Set when the student confirms the address. Null means unconfirmed, which
+  /// is allowed — verification is a nudge here, not a gate on studying.
+  emailVerified DateTime?
   passwordHash String?
   name         String
   surname      String    @default("")
@@ -54,6 +57,9 @@ model User {
   gotRequests   Friendship[]       @relation("FriendAddressee")
   conversations AIConversation[]
   notifications Notification[]
+  flashcards    Flashcard[]
+  cardReviews   FlashcardReview[]
+  quizAttempts  QuizAttempt[]
 }
 
 /// OAuth accounts (Google). Credentials logins have no row here.
@@ -185,6 +191,8 @@ model Subject {
   materials     Material[]
   notes         Note[]
   groups        StudyGroup[]
+  flashcards    Flashcard[]
+  quizAttempts  QuizAttempt[]
 
   @@index([userId])
 }
@@ -200,6 +208,7 @@ model Topic {
 
   subject    Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   examTopics ExamTopic[]
+  flashcards Flashcard[]
 
   @@index([subjectId])
 }
@@ -488,6 +497,118 @@ model Friendship {
 
   @@unique([requesterId, addresseeId])
   @@index([addresseeId])
+}
+
+/* ============================================================
+   Recall — flashcards and quizzes
+   ============================================================ */
+
+/// A single question/answer pair, scheduled by src/lib/srs.ts.
+///
+/// The scheduling columns mirror the SM-2 state exactly: they are written only
+/// by `review()`, so the next due date is always reproducible from them.
+model Flashcard {
+  id        String @id @default(cuid())
+  userId    String
+  subjectId String?
+  topicId   String?
+
+  front String
+  back  String
+  /// "manual" | "ai" | "material" — where the card came from
+  source String @default("manual")
+  /// Set when the card was generated from an uploaded material
+  materialId String?
+
+  /// "YYYY-MM-DD" in the student's own local time
+  due          String
+  intervalDays Int    @default(0)
+  easeFactor   Float  @default(2.5)
+  repetitions  Int    @default(0)
+  lapses       Int    @default(0)
+  lastReviewed String?
+
+  /// Suspended cards stay in the deck but are never shown
+  suspended Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject?          @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  topic   Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  reviews FlashcardReview[]
+
+  @@index([userId, due])
+  @@index([userId, subjectId])
+}
+
+/// One answered card. Kept as history so progress over time is real data
+/// rather than a derived guess, and so a streak can be recomputed.
+model FlashcardReview {
+  id     String @id @default(cuid())
+  cardId String
+  userId String
+
+  /// "nuk-e-dita" | "veshtire" | "mire" | "lehte"
+  recall String
+  /// The interval this review produced, in days
+  intervalDays Int
+  /// "YYYY-MM-DD"
+  date      String
+  createdAt DateTime @default(now())
+
+  card Flashcard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([cardId])
+}
+
+/// A finished quiz. Stored so that exam readiness can use what the student
+/// actually recalled, not only what they marked themselves as mastering.
+model QuizAttempt {
+  id        String  @id @default(cuid())
+  userId    String
+  subjectId String?
+
+  /// "ai" | "material"
+  source     String  @default("ai")
+  materialId String?
+  total      Int
+  correct    Int
+  /// "YYYY-MM-DD"
+  date       String
+  /// Seconds spent, for the student's own pacing
+  seconds    Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  answers QuizAnswer[]
+
+  @@index([userId, date])
+  @@index([userId, subjectId])
+}
+
+/// One question within an attempt, kept so a student can review what they got
+/// wrong — the part of a quiz that actually teaches.
+model QuizAnswer {
+  id        String @id @default(cuid())
+  attemptId String
+
+  question String
+  /// Serialised string[] of the options shown
+  options      String
+  correctIndex Int
+  /// -1 when the question was skipped
+  chosenIndex  Int
+  correct      Boolean
+  explanation  String  @default("")
+  topicName    String  @default("")
+  position     Int     @default(0)
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
 }
 
 /* ============================================================

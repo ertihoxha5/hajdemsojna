@@ -347,12 +347,59 @@ function Message({
    Quiz — used by the chat, subject pages, materials and groups
    ============================================================ */
 
-export function Quiz({ questions }: { questions: QuizQuestion[] }) {
+/**
+ * An answerable quiz.
+ *
+ * When `subjectId` is given the finished attempt is recorded, so the score
+ * still exists next week and can feed exam readiness. Without it the quiz is
+ * ephemeral — that is the right behaviour for a quiz the assistant improvises
+ * mid-conversation, which belongs to no particular subject.
+ */
+export function Quiz({
+  questions,
+  subjectId,
+  materialId,
+}: {
+  questions: QuizQuestion[];
+  subjectId?: string | null;
+  materialId?: string | null;
+}) {
   const [picked, setPicked] = useState<Record<number, number>>({});
   const [hints, setHints] = useState<Record<number, boolean>>({});
+  const [saved, setSaved] = useState(false);
+  const startedAt = useRef(Date.now());
 
   const answered = Object.keys(picked).length;
   const correct = questions.filter((q, i) => picked[i] === q.answer).length;
+
+  // Recorded once, when the last question is answered. The save is deliberately
+  // silent: a student who has just finished should see their score, not a
+  // spinner, and a failed write must not take the result away from them.
+  useEffect(() => {
+    if (saved || !subjectId || answered < questions.length) return;
+    setSaved(true);
+
+    void fetch("/api/quiz/attempt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subjectId,
+        materialId: materialId ?? null,
+        source: materialId ? "material" : "ai",
+        seconds: Math.round((Date.now() - startedAt.current) / 1000),
+        answers: questions.map((q, i) => ({
+          question: q.q,
+          options: q.options,
+          correctIndex: q.answer,
+          chosenIndex: picked[i] ?? -1,
+          explanation: q.hint,
+          topicName: "",
+        })),
+      }),
+    }).catch(() => {
+      // Offline: the score on screen is still correct, just not kept.
+    });
+  }, [answered, materialId, picked, questions, saved, subjectId]);
 
   return (
     <div className="mt-3 overflow-hidden rounded-[12px] border border-line bg-surface">

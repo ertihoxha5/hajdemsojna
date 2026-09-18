@@ -17,6 +17,8 @@ npm run dev             # http://localhost:3000
 npm run db:seed         # optional demo account (see below)
 npm run build
 npm run lint
+npm run typecheck
+npm test                # node --test, no test dependencies
 ```
 
 Environment lives in two files: `DATABASE_URL` in `.env` (the Prisma CLI reads
@@ -48,7 +50,9 @@ browser.
 
 ### Demo account
 
-`npm run db:seed` creates one account with a realistic semester:
+`npm run db:seed` creates one account with a realistic semester — subjects,
+a timetable, deadlines, grades, a flashcard deck part-way through being
+learned, and a quiz already sat:
 
 ```
 demo@hajdemsojna.app / demo12345
@@ -68,9 +72,22 @@ start empty — no demo data is ever attached to a real user.
 | `src/lib/validation.ts` | Every Zod schema — forms, API bodies, and model output |
 | `src/lib/ai/` | Provider abstraction, context engine, prompts, tasks |
 | `src/lib/planner.ts` | The deterministic planner: priority scoring and slot filling |
+| `src/lib/srs.ts` | Spaced repetition (SM-2). Pure, no I/O |
+| `src/lib/pomodoro.ts` | Splits a session into work and break phases |
+| `src/lib/rate-limit.ts` | Per-user budgets for the routes that cost money |
+| `src/lib/password-reset.ts` | Reset tokens, hashed at rest |
+| `src/lib/email-verify.ts` | Address confirmation, same table, separate scope |
+| `src/server/reminders.ts` | Deadline and exam notifications |
+| `src/server/export.ts` | Account export and .ics calendar |
 | `src/lib/insights.ts` | Computed summaries (not model output — labelled as such) |
 | `src/server/` | Data access, all of it user-scoped |
 | `src/app/(app)/` | The authenticated screens |
+
+### Not implemented
+
+Sign-in is email and password only. The schema carries an `Account` model for
+OAuth and `.env.example` lists the Google keys, but nothing reads them — the
+gap is left visible there rather than left to be discovered.
 
 ### Authentication
 
@@ -113,6 +130,89 @@ Asked to just do a graded assignment, the assistant declines and opens with the
 first step instead — a question back, a worked analogue, a hint. This holds in
 the tutor chat, in focus mode, and inside study groups.
 
+### Recall: flashcards and quizzes
+
+Cards are scheduled by `src/lib/srs.ts`, an SM-2 implementation that is a pure
+function of the card's state and one answer — so the next due date is always
+reproducible, and the review buttons can show the student exactly what each
+choice costs before they press it. Two deliberate departures from the 1988
+paper: forgetting a card resets its interval but not the ease factor it earned,
+and intervals are capped at 180 days, because a card due after the exam was
+never studied.
+
+Quiz attempts are stored rather than thrown away, and recent accuracy feeds
+into exam readiness — marking a topic "e zotëroj" is a claim, answering
+questions about it is evidence. A subject with no attempts keeps the original
+weighting exactly, so never quizzing is neither rewarded nor punished.
+
+### Passwords and email
+
+Reset tokens are stored as SHA-256 hashes; the plaintext exists only in the
+link. They are single-use, expire after an hour, and using one revokes every
+other session — a reset is how a student recovers a compromised account.
+
+Signing up sends a confirmation link, but an unconfirmed address is never a
+gate: a student who signed up to plan tomorrow's revision should not be locked
+out because a mail is slow. It only means we will not send them anything
+important, and Cilësimet says so with a button to send the link again.
+
+Both flows share the `VerificationToken` table and are kept apart by a scope
+prefix, so a confirmation link can never be spent as a password reset. There
+are tests for both directions, because that particular mix-up would be an
+account takeover.
+
+There is no mail provider wired up by default. `src/lib/mail.ts` reports
+honestly which of two things happened: `sent`, or `logged` to the server
+console. The UI says which, rather than claiming an email is on its way. Set
+`RESEND_API_KEY` to turn on real delivery.
+
+### Rate limiting
+
+Every `/api/ai/*` route passes through `src/lib/rate-limit.ts` first, because a
+signed-in student calling one in a loop spends the server's API budget. Limits
+are per user and per action — a tutor reply and a whole-semester study plan do
+not cost the same. State is in-process, which is exactly as durable as the SSE
+connections in the group routes; running more than one instance means moving
+the map to Redis, and nothing outside that file changes.
+
+### Taking the data out
+
+`/api/account/export` returns everything the student made as one JSON file, and
+`/api/calendar` returns the timetable as `.ics`. The export deliberately omits
+the password hash, session tokens and the encrypted AI key — those are
+credentials, not data. There is a test that fails if any of them ever appear.
+
+### Tests
+
+`npm test` runs on Node's built-in test runner and native TypeScript stripping,
+so there is no test framework, no transpiler and no new dependency. Two things
+the Next bundler provides are supplied by `tests/resolver.mjs` instead: the
+`@/…` path alias and extensionless relative imports, plus a stub for the
+`server-only` marker package. Tests therefore import the code that actually
+ships, rather than a copy that can drift.
+
+Suites that touch the database run against the real one and clean up after
+themselves; they are namespaced by email domain and the runner is serial,
+because one SQLite file cannot serve parallel test processes.
+
+### Focus mode
+
+A session is split into work and break blocks by `src/lib/pomodoro.ts`, using
+the rhythm the student set in Cilësimet. Before this the preference existed but
+focus mode ignored it and ran one long countdown. The split never ends on a
+break, and the total work time always equals the session the planner
+scheduled — there is a test for that, because losing fifteen minutes to a
+rounding error is the kind of bug nobody reports.
+
+### Reminders
+
+`src/server/reminders.ts` writes notifications for deadlines within two days
+and exams within three. It runs on state load rather than on a scheduler,
+because this app has no background worker: the student's own visit is the
+trigger, which is also the only moment they could act on the reminder. It is
+idempotent by construction, so running it on every load cannot produce
+duplicates.
+
 ### Group study
 
 Rooms are real: create one, share the six-character invite code, and members
@@ -120,6 +220,9 @@ join. The live feed is Server-Sent Events — the server holds the connection an
 pushes new messages and presence as they appear, reconnecting automatically.
 Mentioning `@AI` calls the model server-side and stores its reply as a normal
 group message, so everyone sees it and it survives a reload.
+
+Any member can put a time on the next session; it drives the shared focus timer
+and is announced in the feed, so nobody has to be told separately.
 
 ## Moving to PostgreSQL
 

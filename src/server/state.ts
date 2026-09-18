@@ -9,6 +9,7 @@ import type {
   StudyGroup,
 } from "@/lib/types";
 import { iso } from "@/lib/date";
+import { generateReminders } from "./reminders";
 
 /**
  * Builds the client-side AppState for one user, entirely from their own rows.
@@ -17,7 +18,15 @@ import { iso } from "@/lib/date";
  * return another student's subjects, grades, notes or conversations.
  */
 export async function loadAppState(userId: string, today: string): Promise<AppState> {
-  const [user, subjects, lectures, sessions, assignments, exams, grades, materials, notes, goals, availability, notifications, memberships, friendships, conversation] =
+  // Reminders are generated before the read, so anything due today or tomorrow
+  // is already in the notification list this call is about to return. It is
+  // idempotent, so doing it on every load is safe.
+  await generateReminders(userId, today).catch((error) => {
+    // A reminder that fails to generate must never stop the app from loading.
+    console.error("[state] reminders", error);
+  });
+
+  const [user, subjects, lectures, sessions, assignments, exams, grades, materials, notes, goals, availability, notifications, memberships, friendships, conversation, dueCount, cardCount, reviewedTodayCount, quizAttempts] =
     await Promise.all([
       db.user.findUniqueOrThrow({
         where: { id: userId },
@@ -68,6 +77,18 @@ export async function loadAppState(userId: string, today: string): Promise<AppSt
         where: { userId },
         orderBy: { updatedAt: "desc" },
         include: { messages: { orderBy: { createdAt: "asc" }, take: 100 } },
+      }),
+      // Counts rather than rows: the deck itself is loaded only by /perserit.
+      db.flashcard.count({ where: { userId, suspended: false, due: { lte: today } } }),
+      db.flashcard.count({ where: { userId } }),
+      db.flashcardReview.count({ where: { userId, date: today } }),
+      // Recent attempts only: a subject the student has since learned should
+      // not be dragged down by how a quiz went two months ago.
+      db.quizAttempt.findMany({
+        where: { userId, subjectId: { not: null } },
+        orderBy: { createdAt: "desc" },
+        take: 40,
+        select: { subjectId: true, total: true, correct: true },
       }),
     ]);
 
@@ -280,7 +301,40 @@ export async function loadAppState(userId: string, today: string): Promise<AppSt
       ...(m.payload ? safeParsePayload(m.payload) : {}),
     })),
     streak: computeStreak(sessions, today),
+    recall: {
+      due: dueCount,
+      total: cardCount,
+      reviewedToday: reviewedTodayCount,
+    },
+    quizAccuracy: accuracyBySubject(quizAttempts),
   };
+}
+
+/**
+ * Questions-correct over questions-asked, per subject.
+ *
+ * Weighting by question count rather than averaging per attempt stops a single
+ * two-question quiz from carrying the same weight as a twenty-question one.
+ * Subjects with no attempts are simply absent from the map.
+ */
+function accuracyBySubject(
+  attempts: { subjectId: string | null; total: number; correct: number }[]
+): Record<string, number> {
+  const tally = new Map<string, { total: number; correct: number }>();
+
+  for (const attempt of attempts) {
+    if (!attempt.subjectId) continue;
+    const row = tally.get(attempt.subjectId) ?? { total: 0, correct: 0 };
+    row.total += attempt.total;
+    row.correct += attempt.correct;
+    tally.set(attempt.subjectId, row);
+  }
+
+  const out: Record<string, number> = {};
+  for (const [subjectId, { total, correct }] of tally) {
+    if (total > 0) out[subjectId] = correct / total;
+  }
+  return out;
 }
 
 /* ── helpers ─────────────────────────────────────────────── */

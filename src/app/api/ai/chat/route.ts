@@ -4,7 +4,7 @@ import { getToday } from "@/lib/server-date";
 import { streamTutorReply } from "@/lib/ai/tasks";
 import { AIError } from "@/lib/ai/types";
 import { aiChatInput } from "@/lib/validation";
-import { ERRORS, jsonError } from "@/lib/api";
+import { ERRORS, enforceRateLimit, jsonError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,6 +23,9 @@ export async function POST(request: Request) {
   } catch {
     return jsonError(ERRORS.unauthorized, 401, "unauthorized");
   }
+
+  const limited = enforceRateLimit(user.id, "chat");
+  if (limited) return limited;
 
   let body: unknown;
   try {

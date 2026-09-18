@@ -1,8 +1,10 @@
 import "server-only";
 import {
+  aiFlashcardsSchema,
   aiQuizSchema,
   aiRescheduleSchema,
   aiStudyPlanSchema,
+  type AIFlashcards,
   type AIQuiz,
   type AIStudyPlan,
 } from "@/lib/validation";
@@ -52,6 +54,17 @@ RREGULLA
 3. "answer" është indeksi (0-based) i opsionit të saktë.
 4. "hint" është një udhëzim që e çon studentin drejt arsyetimit — kurrë përgjigjja vetë.
 5. Shkruaj shqip, qartë dhe pa emoji.`;
+
+const FLASHCARD_SYSTEM = `Ti krijon flashcards studimi shqip për Hajde Msojna.
+
+RREGULLA
+1. "front" është një pyetje e shkurtër ose një term. Kurrë një paragraf.
+2. "back" është përgjigjja e plotë por e ngjeshur — maksimum dy fjali.
+3. Një kartë teston VETËM një ide. Nëse një temë ka tre pjesë, bëj tre karta.
+4. Mos krijo karta që përgjigjen me "po" ose "jo".
+5. "topic" është emri i temës së cilës i takon karta, nga lista e dhënë. Nëse nuk i takon asnjërës, lëre bosh.
+6. Mos shpik përmbajtje që nuk gjendet në material kur materiali është dhënë.
+7. Shkruaj shqip, qartë dhe pa emoji.`;
 
 const SUMMARY_SYSTEM = `Ti përmbledh materiale studimi shqip për Hajde Msojna.
 Ji konkret dhe i strukturuar. Nxirr konceptet kryesore, përkufizimet dhe atë që bie më shpesh në provim.
@@ -198,6 +211,44 @@ export async function generateQuiz(
     prompt,
     schema: aiQuizSchema,
     name: "quiz",
+    maxTokens: 4096,
+  });
+}
+
+/**
+ * Structured flashcards, as rows ready to be scheduled.
+ *
+ * This is separate from the `flashcards` action in analyseMaterial, which
+ * returns prose for the student to read. These come back as data because they
+ * are stored and scheduled by src/lib/srs.ts.
+ */
+export async function generateFlashcards(
+  userId: string,
+  options: {
+    subject: string;
+    topics: string[];
+    count: number;
+    sourceText?: string;
+  }
+): Promise<AIFlashcards> {
+  const { provider } = await resolveAI(userId);
+
+  const prompt = [
+    `Lënda: ${options.subject}.`,
+    options.topics.length ? `Temat: ${options.topics.join(", ")}.` : "",
+    options.sourceText
+      ? `Bazohu VETËM në këtë material:\n---\n${options.sourceText.slice(0, 12000)}\n---`
+      : "",
+    `Krijo ${options.count} flashcards.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return provider.generateObject({
+    system: FLASHCARD_SYSTEM,
+    prompt,
+    schema: aiFlashcardsSchema,
+    name: "flashcards",
     maxTokens: 4096,
   });
 }

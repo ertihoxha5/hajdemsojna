@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import {
   Check,
   FileText,
@@ -15,6 +15,7 @@ import {
 import { useStore } from "@/lib/store";
 import { dur } from "@/lib/date";
 import { SESSION_LABEL } from "@/lib/planner";
+import { buildPomodoro, phaseLabel } from "@/lib/pomodoro";
 import {
   Button,
   Card,
@@ -47,27 +48,51 @@ function StudyMode({ params }: { params: Promise<{ id: string }> }) {
   const subject = state.subjects.find((s) => s.id === session?.subjectId);
   const c = useTone(subject?.tone ?? 0);
 
-  const total = (session?.minutes ?? 45) * 60;
+  // The session is split into work and break blocks using the rhythm the
+  // student set in Cilësimet, rather than run as one undifferentiated hour.
+  const plan = useMemo(
+    () =>
+      buildPomodoro(
+        session?.minutes ?? 45,
+        state.availability.sessionLength,
+        state.availability.breakLength
+      ),
+    [session?.minutes, state.availability.sessionLength, state.availability.breakLength]
+  );
+
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  const phase = plan.phases[phaseIndex] ?? plan.phases[0];
+
+  const total = phase.seconds;
   const [left, setLeft] = useState(total);
   const [running, setRunning] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
   const [review, setReview] = useState(false);
 
+  // A new phase resets the clock to that phase's length.
+  useEffect(() => {
+    setLeft(plan.phases[phaseIndex]?.seconds ?? 0);
+  }, [phaseIndex, plan]);
+
   useEffect(() => {
     if (!running) return;
     const t = setInterval(() => {
       setLeft((v) => {
-        if (v <= 1) {
-          // Time is up: stop the clock and ask how the session went.
+        if (v > 1) return v - 1;
+
+        // This phase is over. Move to the next one, or finish the session and
+        // ask how it went if this was the last.
+        if (phaseIndex < plan.phases.length - 1) {
+          setPhaseIndex((i) => i + 1);
+        } else {
           setRunning(false);
           setReview(true);
-          return 0;
         }
-        return v - 1;
+        return 0;
       });
     }, 1000);
     return () => clearInterval(t);
-  }, [running]);
+  }, [running, phaseIndex, plan.phases.length]);
 
   if (!session) {
     return (
@@ -82,7 +107,8 @@ function StudyMode({ params }: { params: Promise<{ id: string }> }) {
 
   const mm = Math.floor(left / 60);
   const ss = left % 60;
-  const progress = ((total - left) / total) * 100;
+  const progress = total > 0 ? ((total - left) / total) * 100 : 0;
+  const onBreak = phase.kind === "pushim";
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
@@ -108,10 +134,21 @@ function StudyMode({ params }: { params: Promise<{ id: string }> }) {
               {session.title}
             </h1>
 
+            {plan.phases.length > 1 && (
+              <p
+                className={cx(
+                  "mt-5 text-[12px] font-semibold uppercase tracking-[0.08em]",
+                  onBreak ? "text-ok" : "text-muted"
+                )}
+              >
+                {phaseLabel(phase, plan.rounds)}
+              </p>
+            )}
+
             <div
               className={cx(
                 "num mt-8 text-[76px] font-semibold leading-none tracking-[-0.04em] tabular-nums sm:text-[96px]",
-                running ? "text-ink" : "text-muted"
+                !running ? "text-muted" : onBreak ? "text-ok" : "text-ink"
               )}
             >
               {`${mm}`.padStart(2, "0")}:{`${ss}`.padStart(2, "0")}
@@ -124,8 +161,15 @@ function StudyMode({ params }: { params: Promise<{ id: string }> }) {
               />
             </div>
             <p className="num mt-2.5 text-[12.5px] text-faint">
-              {dur(session.minutes)} gjithsej · {Math.round(progress)}% e kaluar
+              {dur(session.minutes)} gjithsej · {Math.round(progress)}% e kësaj faze
             </p>
+
+            {onBreak && (
+              <p className="mx-auto mt-4 max-w-xs text-[13px] leading-relaxed text-muted">
+                Largohu nga ekrani. Pushimi është pjesë e mësimit, jo ndërprerje
+                e tij.
+              </p>
+            )}
 
             {session.objective && (
               <div className="mx-auto mt-8 max-w-md rounded-[12px] border border-line bg-surface px-4 py-3.5">
@@ -415,7 +459,7 @@ function AskPanel({ title, subjectId }: { title: string; subjectId: string | nul
         </Card>
       )}
 
-      {quiz.questions && <Quiz questions={quiz.questions} />}
+      {quiz.questions && <Quiz questions={quiz.questions} subjectId={subjectId} />}
     </div>
   );
 }

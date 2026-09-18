@@ -131,7 +131,57 @@ export function useAIQuiz() {
     []
   );
 
-  return { generate, questions, error, busy };
+  /**
+   * Stores a finished quiz.
+   *
+   * The server recomputes the score from the answers, so this is a record of
+   * what happened rather than a claim about how well it went. Failing to save
+   * must never destroy the result the student is looking at, so a failure here
+   * is reported and otherwise ignored.
+   */
+  const saveAttempt = useCallback(
+    async (input: {
+      subjectId?: string | null;
+      materialId?: string | null;
+      seconds?: number;
+      chosen: number[];
+      questions: QuizQuestion[];
+    }) => {
+      try {
+        const res = await fetch("/api/quiz/attempt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subjectId: input.subjectId ?? null,
+            materialId: input.materialId ?? null,
+            source: input.materialId ? "material" : "ai",
+            seconds: input.seconds ?? 0,
+            answers: input.questions.map((q, i) => ({
+              question: q.q,
+              options: q.options,
+              correctIndex: q.answer,
+              chosenIndex: input.chosen[i] ?? -1,
+              explanation: q.hint,
+              topicName: "",
+            })),
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(data.error ?? NETWORK_ERROR);
+          return null;
+        }
+        return data as { id: string; correct: number; total: number };
+      } catch {
+        setError(NETWORK_ERROR);
+        return null;
+      }
+    },
+    []
+  );
+
+  return { generate, saveAttempt, questions, error, busy };
 }
 
 export function useMaterialAI() {

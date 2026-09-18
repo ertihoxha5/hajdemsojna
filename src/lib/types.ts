@@ -263,4 +263,19 @@ export interface AppState {
   notifications: Notification[];
   aiThread: AIMessage[];
   streak: number;
+  /** Flashcard counts, so the nav badge and Sot do not each need a fetch. */
+  recall: RecallCounts;
+  /**
+   * Recent quiz accuracy per subject id, 0..1. A subject with no recorded
+   * attempts is absent rather than 0 — readiness must be able to tell
+   * "answered badly" apart from "never tested".
+   */
+  quizAccuracy: Record<ID, number>;
+}
+
+export interface RecallCounts {
+  /** Cards scheduled for today or earlier. */
+  due: number;
+  total: number;
+  reviewedToday: number;
 }

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { generateQuiz } from "@/lib/ai/tasks";
 import { AIError } from "@/lib/ai/types";
-import { ERRORS, jsonError } from "@/lib/api";
+import { ERRORS, enforceRateLimit, jsonError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,6 +19,9 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
+
+    const limited = enforceRateLimit(user.id, "quiz");
+    if (limited) return limited;
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) return jsonError(ERRORS.invalid, 400, "invalid_input");

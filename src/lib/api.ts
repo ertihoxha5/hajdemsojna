@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { UnauthorizedError } from "./session";
+import { rateLimit, rateLimitMessage, type LimitName } from "./rate-limit";
 
 /**
  * One place where server errors become responses.
@@ -24,6 +25,23 @@ export const ERRORS = {
 
 export function jsonError(message: string, status = 400, code?: string) {
   return NextResponse.json({ error: message, code }, { status });
+}
+
+/**
+ * Guards a costly route. Returns a ready 429 when the student is over their
+ * budget, or null to continue — so a route reads:
+ *
+ *     const limited = enforceRateLimit(user.id, "quiz");
+ *     if (limited) return limited;
+ */
+export function enforceRateLimit(userId: string, action: LimitName) {
+  const result = rateLimit(userId, action);
+  if (result.ok) return null;
+
+  return NextResponse.json(
+    { error: rateLimitMessage(result.retryAfter), code: "rate_limited" },
+    { status: 429, headers: { "Retry-After": String(result.retryAfter) } }
+  );
 }
 
 /** Wraps a route handler so thrown errors never leak a stack trace. */

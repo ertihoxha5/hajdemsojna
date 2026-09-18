@@ -18,6 +18,7 @@ const PROTECTED = [
   "/orari",
   "/plani",
   "/lendet",
+  "/perserit",
   "/detyrat",
   "/provimet",
   "/notat",
@@ -37,10 +38,20 @@ const PROTECTED = [
   "/groups",
   "/settings",
   "/study",
+  "/review",
 ];
 
-/** Signed-out only — a logged-in user has no reason to see these. */
-const AUTH_ROUTES = ["/signin", "/signup"];
+/**
+ * Signed-out only — a logged-in user has no reason to see these.
+ *
+ * /rivendos is deliberately absent: a student who is signed in on one device
+ * may still be following a reset link because another device is compromised,
+ * and bouncing them to /sot would strip the token from the URL.
+ */
+const AUTH_ROUTES = ["/signin", "/signup", "/harrova"];
+
+// /konfirmo and /rivendos are intentionally in neither list: both are reached
+// from an emailed link, and bouncing either way would strip the token.
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
