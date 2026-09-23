@@ -14,6 +14,7 @@ import type { AppState, Mastery } from "./types";
 import type { Action } from "./store-actions";
 import { isServerAction } from "./store-actions";
 import { timeOf } from "./date";
+import { detectTheme, writeThemeCookie } from "./theme";
 
 export type { Action };
 
@@ -380,13 +381,9 @@ function clockNow(): string {
 }
 
 function initialTheme(): "light" | "dark" {
-  try {
-    const stored = localStorage.getItem("hm-theme");
-    if (stored === "dark" || stored === "light") return stored;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  } catch {
-    return "light";
-  }
+  // Reads the same cookie the server rendered from, so the client agrees
+  // with the markup it is hydrating.
+  return detectTheme();
 }
 
 /**
@@ -471,11 +468,9 @@ export function StoreProvider({
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try {
-      localStorage.setItem("hm-theme", theme);
-    } catch {
-      /* ignore */
-    }
+    // A cookie, not localStorage: the server renders the theme now, and can
+    // only do that if it can see the choice.
+    writeThemeCookie(theme);
   }, [theme]);
 
   const toggleTheme = useCallback(

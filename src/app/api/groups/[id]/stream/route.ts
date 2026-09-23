@@ -78,7 +78,7 @@ export async function GET(
           // Being connected is the heartbeat that keeps this member "online".
           await touchPresence(id, userId);
 
-          const fresh = await db.groupMessage.findMany({
+          const fresh = await db.roomMessage.findMany({
             where: { groupId: id, createdAt: { gt: cursor } },
             orderBy: { createdAt: "asc" },
             take: 50,
@@ -89,7 +89,7 @@ export async function GET(
             send("messages", { messages: fresh.map((m) => toWire(m, userId)) });
           }
 
-          const members = await db.studyGroupMember.findMany({
+          const members = await db.studySpaceMember.findMany({
             where: { groupId: id },
             include: { user: { include: { profile: true } } },
           });

@@ -366,18 +366,26 @@ export function Quiz({
 }) {
   const [picked, setPicked] = useState<Record<number, number>>({});
   const [hints, setHints] = useState<Record<number, boolean>>({});
-  const [saved, setSaved] = useState(false);
-  const startedAt = useRef(Date.now());
+  const savedRef = useRef(false);
+  // Stamped on mount, not during render: reading the clock while rendering
+  // makes the value depend on when React happens to re-render.
+  const startedAt = useRef(0);
 
   const answered = Object.keys(picked).length;
   const correct = questions.filter((q, i) => picked[i] === q.answer).length;
+
+  useEffect(() => {
+    startedAt.current = Date.now();
+  }, []);
 
   // Recorded once, when the last question is answered. The save is deliberately
   // silent: a student who has just finished should see their score, not a
   // spinner, and a failed write must not take the result away from them.
   useEffect(() => {
-    if (saved || !subjectId || answered < questions.length) return;
-    setSaved(true);
+    if (savedRef.current || !subjectId || answered < questions.length) return;
+    // A ref, not state: this guards a fire-and-forget write and nothing
+    // renders from it, so flipping it must not cost a render pass.
+    savedRef.current = true;
 
     void fetch("/api/quiz/attempt", {
       method: "POST",
@@ -399,7 +407,7 @@ export function Quiz({
     }).catch(() => {
       // Offline: the score on screen is still correct, just not kept.
     });
-  }, [answered, materialId, picked, questions, saved, subjectId]);
+  }, [answered, materialId, picked, questions, subjectId]);
 
   return (
     <div className="mt-3 overflow-hidden rounded-[12px] border border-line bg-surface">

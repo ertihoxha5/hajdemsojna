@@ -1,282 +1,348 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Clock, Plus, Sparkles, Users } from "lucide-react";
-import { useStore } from "@/lib/store";
-import { dur, relativeDays } from "@/lib/date";
-import {
-  Avatar,
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-  Select,
-  SubjectDot,
-  cx,
-  useToast,
-} from "@/components/ui";
-import type { StudyGroup } from "@/lib/types";
+import { Compass, KeyRound, Loader2, Plus, Users } from "lucide-react";
+import { environmentFor } from "@/lib/spaces/environments";
+import { clock } from "@/lib/spaces/session";
+import { Button, Card, EmptyState, Field, Input, Modal, useToast } from "@/components/ui";
 
-export default function GroupsPage() {
-  const { state, today } = useStore();
-  const [creating, setCreating] = useState(false);
-  const [joining, setJoining] = useState(false);
+/**
+ * Mso Bashkë.
+ *
+ * Rooms are shown as lit thumbnails in horizontal rails rather than as a card
+ * grid, because the interesting thing about a space is whether it is alive —
+ * who is in it and how far through a round they are. A grid of equal boxes
+ * flattens exactly that.
+ */
+
+interface SpaceCard {
+  id: string;
+  name: string;
+  subjectName: string;
+  environment: string;
+  privacy: string;
+  memberCount: number;
+  maxMembers: number;
+  isMember: boolean;
+  session: {
+    mode: string;
+    round: number;
+    totalRounds: number;
+    remaining: number;
+  } | null;
+  topic: string;
+  groupFocus: number;
+}
+
+interface Discovery {
+  mine: SpaceCard[];
+  live: SpaceCard[];
+  publicSpaces: SpaceCard[];
+  recommended: SpaceCard[];
+}
+
+export default function SpacesPage() {
+  const router = useRouter();
+  const [data, setData] = useState<Discovery | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [joinOpen, setJoinOpen] = useState(false);
+
+  const fetchSpaces = useCallback(async (): Promise<Discovery | null> => {
+    try {
+      const res = await fetch("/api/spaces");
+      const json = await res.json().catch(() => ({}));
+      return res.ok ? (json as Discovery) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchSpaces().then((next) => {
+      if (cancelled) return;
+      if (next) setData(next);
+      setLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchSpaces]);
+
+  const empty =
+    data &&
+    !data.mine.length &&
+    !data.publicSpaces.length &&
+    !data.recommended.length;
 
   return (
-    <div>
-      <PageHeader
-        title="Mso Bashkë"
-        question="Me kë mund ta mësoj këtë?"
-        right={
-          <>
-            <Button onClick={() => setJoining(true)}>Bashkohu me kod</Button>
-            <Button variant="primary" onClick={() => setCreating(true)}>
-              <Plus size={14} />
-              Krijo grup
-            </Button>
-          </>
-        }
-      />
-
-      {state.groups.length === 0 ? (
-        <EmptyState
-          title="Nuk je ende në asnjë grup"
-          body="Krijo një dhomë studimi për një lëndë, ose bashkohu me kodin e ftesës që të dha një shok."
-          icon={<Users size={22} />}
-          action={
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="primary" onClick={() => setCreating(true)}>
-                <Plus size={14} />
-                Krijo grupin e parë
-              </Button>
-              <Button onClick={() => setJoining(true)}>Bashkohu me kod</Button>
-            </div>
-          }
-        />
-      ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {state.groups.map((g, i) => (
-            <GroupCard key={g.id} group={g} index={i} today={today} />
-          ))}
+    <div className="flex flex-col gap-8">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[26px] font-semibold tracking-[-0.025em] text-ink sm:text-[30px]">
+            Mso Bashkë
+          </h1>
+          <p className="mt-1.5 text-[14px] text-muted">
+            Gjej një hapësirë. Hyr me shokë. Fokusohuni së bashku.
+          </p>
         </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" onClick={() => setJoinOpen(true)}>
+            <KeyRound size={14} />
+            Bashkohu me kod
+          </Button>
+          <Button variant="primary" onClick={() => router.push("/mso-bashke/krijo")}>
+            <Plus size={14} />
+            Krijo Study Space
+          </Button>
+        </div>
+      </header>
+
+      {loading && !data ? (
+        <Card className="flex items-center justify-center gap-2 py-16 text-[13.5px] text-muted">
+          <Loader2 size={15} className="animate-spin" />
+          Po ngarkoj hapësirat…
+        </Card>
+      ) : empty ? (
+        <FirstTime onJoin={() => setJoinOpen(true)} />
+      ) : (
+        <>
+          <Rail
+            title="Duke ndodhur tani"
+            hint="Raunde në zhvillim e sipër."
+            spaces={data?.live ?? []}
+          />
+          <Rail
+            title="Spaces e mia"
+            hint="Dhomat ku je anëtar."
+            spaces={data?.mine ?? []}
+          />
+          <Rail
+            title="Të rekomanduara për ty"
+            hint="Publike, në lëndët që ke ti."
+            spaces={data?.recommended ?? []}
+          />
+          <Rail
+            title="Spaces publike"
+            hint="Të hapura për këdo."
+            spaces={data?.publicSpaces ?? []}
+          />
+        </>
       )}
 
-      <CreateGroup open={creating} onClose={() => setCreating(false)} />
-      <JoinGroup open={joining} onClose={() => setJoining(false)} />
+      {joinOpen && (
+        <JoinModal
+          onClose={() => setJoinOpen(false)}
+          onJoined={(id) => router.push(`/mso-bashke/${id}`)}
+        />
+      )}
     </div>
   );
 }
 
-function GroupCard({
-  group,
-  index,
-  today,
+/* ============================================================
+   Rails
+   ============================================================ */
+
+function Rail({
+  title,
+  hint,
+  spaces,
 }: {
-  group: StudyGroup;
-  index: number;
-  today: string;
+  title: string;
+  hint: string;
+  spaces: SpaceCard[];
 }) {
-  const { state } = useStore();
-  const subject = state.subjects.find((s) => s.id === group.subjectId);
-  const people = group.members.filter((m) => m.role !== "ai");
-  const online = people.filter((m) => m.state !== "offline").length;
-  const live = group.nextSession?.date === today;
+  if (!spaces.length) return null;
 
   return (
-    <Card className={`anim-in anim-delay-${Math.min(index + 1, 5)}`} hover>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {subject && <SubjectDot toneIndex={subject.tone} />}
-            <span className="text-[12.5px] text-muted">{subject?.name ?? "Grup studimi"}</span>
-          </div>
-          <h3 className="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-ink">
-            {group.name}
-          </h3>
-          {group.about && (
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">{group.about}</p>
-          )}
+    <section>
+      <div className="mb-3 flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-[16px] font-semibold tracking-[-0.015em] text-ink">
+            {title}
+          </h2>
+          <p className="text-[12.5px] text-muted">{hint}</p>
         </div>
-        {live && <Badge tone="ok">Sonte</Badge>}
+        <span className="num text-[12px] text-faint">{spaces.length}</span>
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <div className="flex -space-x-2">
-          {people.slice(0, 5).map((m) => (
-            <Avatar
-              key={m.id}
-              initials={m.initials}
-              toneIndex={m.tone}
-              size={28}
-              ring="var(--surface)"
-            />
-          ))}
-        </div>
-        <span className="text-[12.5px] text-muted">
-          {people.length} {people.length === 1 ? "anëtar" : "anëtarë"}
-          {online > 0 && <span className="text-ok"> · {online} online</span>}
-        </span>
-        {group.weeklyMinutes > 0 && (
-          <span className="num ml-auto text-[12.5px] text-faint">
-            {dur(group.weeklyMinutes)} këtë javë
+      {/* Horizontal rail: rooms scroll sideways so a long list never pushes
+          the rest of the page off the screen. */}
+      <div className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2">
+        {spaces.map((space) => (
+          <SpaceTile key={`${title}-${space.id}`} space={space} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SpaceTile({ space }: { space: SpaceCard }) {
+  const env = environmentFor(space.environment);
+  const live = space.session && space.session.mode !== "ended";
+
+  return (
+    <Link
+      href={
+        space.isMember
+          ? `/mso-bashke/${space.id}`
+          : `/mso-bashke/hyr?space=${space.id}`
+      }
+      className="group w-[248px] shrink-0 snap-start overflow-hidden rounded-[14px] border border-line bg-surface transition-all hover:border-brand/60 hover:shadow-md"
+    >
+      {/* The thumbnail is the room's real palette, so it is recognisable. */}
+      <div
+        className="relative h-24 w-full"
+        style={{
+          background: `radial-gradient(90% 80% at 50% 8%, ${env.palette.glow}55 0%, ${env.palette.wall} 45%, ${env.palette.floor} 100%)`,
+        }}
+      >
+        {live && (
+          <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-white">
+            <span className="h-1.5 w-1.5 rounded-full bg-bad" />
+            Live
           </span>
         )}
-      </div>
 
-      {group.nextSession && (
-        <div
-          className={cx(
-            "mt-4 flex flex-wrap items-center gap-3 rounded-[10px] px-3.5 py-3",
-            live ? "bg-brand-soft/60" : "bg-sunken/70"
-          )}
-        >
-          <Clock size={14} className={live ? "text-brand" : "text-muted"} />
-          <div className="min-w-0 flex-1">
-            <p className="num text-[13px] font-medium text-ink">
-              {relativeDays(today, group.nextSession.date)} · {group.nextSession.start}
-              <span className="font-normal text-faint"> ({group.nextSession.minutes} min)</span>
-            </p>
-            <p className="truncate text-[12.5px] text-muted">{group.nextSession.topic}</p>
-          </div>
-        </div>
-      )}
+        <span className="absolute right-2 top-2 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white">
+          {space.privacy === "public"
+            ? "Publike"
+            : space.privacy === "friends"
+              ? "Shokët"
+              : "Private"}
+        </span>
 
-      <div className="mt-4 flex items-center gap-2">
-        <Link href={`/mso-bashke/${group.id}`}>
-          <Button size="sm" variant={live ? "primary" : "secondary"}>
-            {live ? "Hyr në dhomë" : "Hap grupin"}
-          </Button>
-        </Link>
-        <span className="ml-auto flex items-center gap-1.5 text-[12px] text-ai">
-          <Sparkles size={12} />
-          Asistenti AI është në dhomë
+        <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[10.5px] font-medium text-white">
+          <Users size={10} />
+          {space.memberCount}/{space.maxMembers}
         </span>
       </div>
-    </Card>
-  );
-}
 
-function CreateGroup({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { state } = useStore();
-  const router = useRouter();
-  const toast = useToast();
-  const [name, setName] = useState("");
-  const [about, setAbout] = useState("");
-  const [subjectId, setSubjectId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+      <div className="p-3">
+        <p className="truncate text-[14px] font-medium text-ink">{space.name}</p>
+        <p className="truncate text-[12px] text-muted">
+          {env.name}
+          {space.subjectName ? ` · ${space.subjectName}` : ""}
+        </p>
 
-  async function create() {
-    if (!name.trim()) {
-      setError("Shkruaj emrin e grupit.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
+        {live && space.session ? (
+          <p className="num mt-2 text-[12.5px] text-ink">
+            {space.session.mode === "focus" ? "Fokus" : "Pushim"}{" "}
+            {clock(space.session.remaining)}
+            <span className="text-faint">
+              {" "}
+              · raundi {space.session.round}/{space.session.totalRounds}
+            </span>
+          </p>
+        ) : (
+          <p className="mt-2 text-[12.5px] text-faint">Pa sesion aktiv</p>
+        )}
 
-    try {
-      const res = await fetch("/api/groups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), about, subjectId: subjectId || null }),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data.error ?? "Krijimi dështoi.");
-        return;
-      }
-
-      toast(`Grupi u krijua. Kodi i ftesës: ${data.inviteCode}`);
-      setName("");
-      setAbout("");
-      onClose();
-      router.push(`/mso-bashke/${data.id}`);
-      router.refresh();
-    } catch {
-      setError("Lidhja dështoi. Provo përsëri.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Krijo grup studimi"
-      footer={
-        <>
-          <Button onClick={onClose}>Anulo</Button>
-          <Button variant="primary" onClick={create} disabled={busy}>
-            {busy ? "Duke krijuar…" : "Krijo"}
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3.5">
-        {error && (
-          <p className="rounded-[9px] border border-bad/30 bg-bad-soft px-3 py-2 text-[12.5px] text-bad">
-            {error}
+        {space.topic && (
+          <p className="mt-1 truncate text-[12px] text-muted">
+            Tema: {space.topic}
           </p>
         )}
-        <Field label="Emri i grupit">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="p.sh. Algoritme Crew"
-            autoFocus
-          />
-        </Field>
-        <Field label="Lënda" hint="Opsionale">
-          <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
-            <option value="">Pa lëndë</option>
-            {state.subjects.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Përshkrimi" hint="Opsionale">
-          <Input
-            value={about}
-            onChange={(e) => setAbout(e.target.value)}
-            placeholder="Për çfarë do të përdoret ky grup?"
-          />
-        </Field>
-        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-ai">
-          <Sparkles size={13} className="mt-0.5 shrink-0" />
-          Pas krijimit merr një kod ftese për shokët. Asistenti AI është pjesë e çdo dhome.
-        </p>
+
+        {space.memberCount > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-brand"
+                style={{ width: `${space.groupFocus}%` }}
+              />
+            </div>
+            <span className="num text-[11px] text-faint">{space.groupFocus}%</span>
+          </div>
+        )}
       </div>
-    </Modal>
+    </Link>
   );
 }
 
-function JoinGroup({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const router = useRouter();
+/* ============================================================
+   Empty state and joining
+   ============================================================ */
+
+function FirstTime({ onJoin }: { onJoin: () => void }) {
+  return (
+    <EmptyState
+      icon={<Compass size={24} />}
+      title="Studimi është më i lehtë kur nuk je vetëm."
+      body="Krijo një hapësirë, hyr në një publike, ose përdor kodin që të dha një shok."
+      action={
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link href="/mso-bashke/krijo">
+            <Button variant="primary">
+              <Plus size={14} />
+              Krijo Study Space
+            </Button>
+          </Link>
+          <Button onClick={onJoin}>
+            <KeyRound size={14} />
+            Bashkohu me kod
+          </Button>
+        </div>
+      }
+    />
+  );
+}
+
+function JoinModal({
+  onClose,
+  onJoined,
+}: {
+  onClose: () => void;
+  onJoined: (spaceId: string) => void;
+}) {
   const toast = useToast();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    id: string;
+    name: string;
+    subjectName: string;
+    memberCount: number;
+    maxMembers: number;
+    rules: string[];
+  } | null>(null);
 
-  async function join() {
-    if (code.trim().length < 4) {
-      setError("Shkruaj kodin e ftesës.");
-      return;
-    }
+  // Look the code up before joining, so the rules can be read first.
+  const look = async () => {
     setBusy(true);
     setError(null);
 
     try {
-      const res = await fetch("/api/groups/join", {
+      const res = await fetch(
+        `/api/spaces/join?code=${encodeURIComponent(code.trim())}`
+      );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data.error ?? "Kodi nuk u gjet.");
+        return;
+      }
+      setPreview(data.space);
+    } catch {
+      setError("Lidhja dështoi.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const join = async () => {
+    setBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/spaces/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: code.trim() }),
@@ -284,49 +350,73 @@ function JoinGroup({ open, onClose }: { open: boolean; onClose: () => void }) {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(data.error ?? "Bashkimi dështoi.");
+        setError(data.error ?? "Nuk u bashkove dot.");
         return;
       }
 
-      toast("U bashkove në grup.");
-      setCode("");
-      onClose();
-      router.push(`/mso-bashke/${data.id}`);
-      router.refresh();
+      toast("Mirë se erdhe!");
+      onJoined(data.spaceId);
     } catch {
-      setError("Lidhja dështoi. Provo përsëri.");
+      setError("Lidhja dështoi.");
     } finally {
       setBusy(false);
     }
-  }
+  };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Bashkohu me kod"
-      footer={
-        <>
-          <Button onClick={onClose}>Anulo</Button>
-          <Button variant="primary" onClick={join} disabled={busy}>
-            {busy ? "Duke u bashkuar…" : "Bashkohu"}
+    <Modal open onClose={onClose} title="Bashkohu me kod">
+      <div className="flex flex-col gap-3">
+        <Field label="Kodi i hapësirës" hint="Gjashtë karaktere, p.sh. HM7X92.">
+          <Input
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value.toUpperCase());
+              setPreview(null);
+            }}
+            placeholder="AX72Q9"
+            maxLength={8}
+            autoFocus
+            className="num tracking-[0.2em]"
+          />
+        </Field>
+
+        {preview && (
+          <div className="rounded-[10px] border border-line bg-sunken p-3">
+            <p className="text-[13.5px] font-medium text-ink">{preview.name}</p>
+            <p className="text-[12.5px] text-muted">
+              {preview.memberCount}/{preview.maxMembers} studentë
+              {preview.subjectName ? ` · ${preview.subjectName}` : ""}
+            </p>
+
+            {preview.rules.length > 0 && (
+              <>
+                <p className="mt-2 text-[12px] font-medium text-ink">Rregullat</p>
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {preview.rules.map((r) => (
+                    <li key={r} className="text-[12px] text-muted">
+                      • {r}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+
+        {error && <p className="text-[13px] text-bad">{error}</p>}
+
+        <div className="mt-1 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Anulo
           </Button>
-        </>
-      }
-    >
-      <p className="mb-3 text-[13.5px] text-muted">Fut kodin që të dha anëtari i grupit.</p>
-      {error && (
-        <p className="mb-3 rounded-[9px] border border-bad/30 bg-bad-soft px-3 py-2 text-[12.5px] text-bad">
-          {error}
-        </p>
-      )}
-      <Input
-        value={code}
-        onChange={(e) => setCode(e.target.value.toUpperCase())}
-        placeholder="p.sh. K7MQP2"
-        autoFocus
-        className="num text-center text-[18px] font-semibold tracking-[0.2em]"
-      />
+          <Button
+            disabled={busy || code.trim().length < 6}
+            onClick={preview ? join : look}
+          >
+            {busy ? "Një moment…" : preview ? "Hyr" : "Kontrollo kodin"}
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 }

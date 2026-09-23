@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       ? await db.subject.findFirst({ where: { id: subjectId, userId: user.id } })
       : null;
 
-    const group = await db.studyGroup.create({
+    const group = await db.studySpace.create({
       data: {
         name,
         about: about ?? "",
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       },
     });
 
-    await db.groupMessage.create({
+    await db.roomMessage.create({
       data: {
         groupId: group.id,
         authorName: "Sistemi",

@@ -56,6 +56,12 @@ export const LIMITS = {
    * attempts to mine the form for which addresses have accounts.
    */
   passwordReset: { max: 5, windowSeconds: 900 },
+  /** Invite codes are six characters, so joining has to be hard to enumerate. */
+  spaceJoin: { max: 12, windowSeconds: 300 },
+  /** Chat is cheap, but a loop still floods everyone else's screen. */
+  roomMessage: { max: 60, windowSeconds: 60 },
+  /** A room-wide AI call costs the same as any other model call. */
+  roomAI: { max: 12, windowSeconds: 300 },
 } as const satisfies Record<string, Limit>;
 
 export type LimitName = keyof typeof LIMITS;

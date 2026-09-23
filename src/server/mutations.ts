@@ -458,11 +458,11 @@ export async function applyAction(
     /* ── Groups ───────────────────────────────────────── */
 
     case "group/notes": {
-      const member = await db.studyGroupMember.findFirst({
+      const member = await db.studySpaceMember.findFirst({
         where: { groupId: action.groupId, userId },
       });
       if (!member) return;
-      await db.studyGroup.update({
+      await db.studySpace.update({
         where: { id: action.groupId },
         data: { sharedNotes: action.notes },
       });
@@ -470,7 +470,7 @@ export async function applyAction(
     }
 
     case "group/memberState": {
-      await db.studyGroupMember.updateMany({
+      await db.studySpaceMember.updateMany({
         where: { groupId: action.groupId, userId },
         data: { state: action.state, lastSeen: new Date() },
       });

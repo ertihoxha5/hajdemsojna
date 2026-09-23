@@ -21,7 +21,7 @@ export async function GET(
     await requireMembership(id, user.id);
 
     const after = new URL(request.url).searchParams.get("after");
-    const messages = await db.groupMessage.findMany({
+    const messages = await db.roomMessage.findMany({
       where: {
         groupId: id,
         ...(after ? { createdAt: { gt: new Date(after) } } : {}),
@@ -54,7 +54,7 @@ export async function POST(
 
     const text = parsed.data.text;
 
-    const posted = await db.groupMessage.create({
+    const posted = await db.roomMessage.create({
       data: { groupId: id, userId: user.id, authorName: user.name, text },
     });
 
@@ -64,7 +64,7 @@ export async function POST(
     }
 
     // ── The assistant is addressed ──
-    const recent = await db.groupMessage.findMany({
+    const recent = await db.roomMessage.findMany({
       where: { groupId: id },
       orderBy: { createdAt: "desc" },
       take: 14,
@@ -87,7 +87,7 @@ export async function POST(
           count: Math.min(10, Math.max(3, count)),
         });
 
-        const aiMessage = await db.groupMessage.create({
+        const aiMessage = await db.roomMessage.create({
           data: {
             groupId: id,
             authorName: "Asistenti AI",
@@ -111,7 +111,7 @@ export async function POST(
         question,
       });
 
-      const aiMessage = await db.groupMessage.create({
+      const aiMessage = await db.roomMessage.create({
         data: {
           groupId: id,
           authorName: "Asistenti AI",
@@ -132,7 +132,7 @@ export async function POST(
 
       // The student's message is already posted; say plainly that the
       // assistant could not answer rather than inventing a reply.
-      const aiMessage = await db.groupMessage.create({
+      const aiMessage = await db.roomMessage.create({
         data: {
           groupId: id,
           authorName: "Asistenti AI",

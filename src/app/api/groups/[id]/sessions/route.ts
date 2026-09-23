@@ -64,7 +64,7 @@ export async function POST(
     });
 
     // Everyone sees it in the feed, so nobody has to be told separately.
-    await db.groupMessage.create({
+    await db.roomMessage.create({
       data: {
         groupId: id,
         userId: user.id,

@@ -18,7 +18,7 @@ export async function GET(
     await requireMembership(id, user.id);
     await touchPresence(id, user.id);
 
-    const group = await db.studyGroup.findUniqueOrThrow({
+    const group = await db.studySpace.findUniqueOrThrow({
       where: { id },
       include: { members: { include: { user: { include: { profile: true } } } } },
     });
@@ -47,23 +47,23 @@ export async function DELETE(
     const { id } = await params;
     const member = await requireMembership(id, user.id);
 
-    await db.studyGroupMember.delete({ where: { id: member.id } });
+    await db.studySpaceMember.delete({ where: { id: member.id } });
 
     if (member.role === "owner") {
-      const next = await db.studyGroupMember.findFirst({
+      const next = await db.studySpaceMember.findFirst({
         where: { groupId: id },
         orderBy: { joinedAt: "asc" },
       });
       if (next) {
-        await db.studyGroupMember.update({ where: { id: next.id }, data: { role: "owner" } });
-        await db.studyGroup.update({ where: { id }, data: { ownerId: next.userId } });
+        await db.studySpaceMember.update({ where: { id: next.id }, data: { role: "owner" } });
+        await db.studySpace.update({ where: { id }, data: { ownerId: next.userId } });
       } else {
-        await db.studyGroup.delete({ where: { id } });
+        await db.studySpace.delete({ where: { id } });
         return NextResponse.json({ ok: true, deleted: true });
       }
     }
 
-    await db.groupMessage.create({
+    await db.roomMessage.create({
       data: {
         groupId: id,
         authorName: "Sistemi",

@@ -50,9 +50,9 @@ model User {
   goals         StudyGoal[]
   materials     Material[]
   notes         Note[]
-  ownedGroups   StudyGroup[]       @relation("GroupOwner")
-  memberships   StudyGroupMember[]
-  groupMessages GroupMessage[]
+  ownedSpaces   StudySpace[]       @relation("GroupOwner")
+  memberships   StudySpaceMember[]
+  groupMessages RoomMessage[]
   sentRequests  Friendship[]       @relation("FriendRequester")
   gotRequests   Friendship[]       @relation("FriendAddressee")
   conversations AIConversation[]
@@ -112,6 +112,9 @@ model UserProfile {
   institution String    @default("")
   year        String    @default("")
   avatarTone  Int       @default(0)
+  /// Serialised avatar (see src/lib/avatar.ts). Built once and reused in every
+  /// space, so a student never re-creates their character.
+  avatar      String    @default("")
   streak      Int       @default(0)
   onboardedAt DateTime?
 
@@ -190,7 +193,7 @@ model Subject {
   grades        Grade[]
   materials     Material[]
   notes         Note[]
-  groups        StudyGroup[]
+  spaces        StudySpace[]
   flashcards    Flashcard[]
   quizAttempts  QuizAttempt[]
 
@@ -416,59 +419,115 @@ model Note {
    Social
    ============================================================ */
 
-model StudyGroup {
-  id         String   @id @default(cuid())
-  name       String
-  about      String   @default("")
-  subjectId  String?
-  subjectName String  @default("")
-  ownerId    String
-  inviteCode String   @unique
-  sharedNotes String  @default("")
-  createdAt  DateTime @default(now())
+/// A multiplayer study space.
+///
+/// Mapped onto the original StudyGroup table so that every existing room, its
+/// members and its whole message history survive the rename — only the name in
+/// code changed, never the data.
+model StudySpace {
+  id          String   @id @default(cuid())
+  name        String
+  about       String   @default("")
+  subjectId   String?
+  subjectName String   @default("")
+  ownerId     String
+  inviteCode  String   @unique
+  sharedNotes String   @default("")
+  createdAt   DateTime @default(now())
 
-  owner    User               @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  subject  Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  members  StudyGroupMember[]
-  messages GroupMessage[]
+  /// "public" | "private" | "friends"
+  privacy     String @default("private")
+  /// Key into ENVIRONMENTS in src/lib/spaces/environments.ts
+  environment String @default("biblioteka")
+  /// Key into AMBIENCES; "none" means silence
+  ambient     String @default("none")
+  /// When true, the host's ambience choice is pushed to everyone
+  syncAmbient Boolean @default(false)
+
+  studyMinutes Int @default(50)
+  breakMinutes Int @default(10)
+  roundCount   Int @default(5)
+  maxMembers   Int @default(8)
+
+  aiSupervisor Boolean @default(true)
+  /// One rule per line, shown before joining
+  rules        String  @default("")
+  /// Lets the host stop new arrivals mid-session
+  locked       Boolean @default(false)
+
+  owner    User                @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  subject  Subject?            @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  members  StudySpaceMember[]
+  messages RoomMessage[]
   sessions GroupSession[]
+  runs     StudySpaceSession[]
+
+  @@index([privacy, createdAt])
+  @@map("StudyGroup")
 }
 
-model StudyGroupMember {
+model StudySpaceMember {
   id       String   @id @default(cuid())
   groupId  String
   userId   String
-  /// "owner" | "member"
+  /// "owner" | "cohost" | "member"
   role     String   @default("member")
   /// "meson" | "pushim" | "offline"
   state    String   @default("offline")
   lastSeen DateTime @default(now())
   joinedAt DateTime @default(now())
 
-  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// Position on the map, in grid cells. Remembered between visits, so a
+  /// returning student finds their usual seat.
+  avatarX Int     @default(6)
+  avatarY Int     @default(5)
+  /// The seat they occupy, or null when standing
+  seatId  String?
+
+  /// "active" | "idle" | "away" | "disconnected" — derived from real browser
+  /// signals only (see src/lib/presence.ts), never from a camera.
+  activity     String   @default("disconnected")
+  lastActiveAt DateTime @default(now())
+
+  /// What they told the room they are working on
+  studySubject String  @default("")
+  studyTopic   String  @default("")
+  studyGoal    String  @default("")
+  goalDone     Boolean @default(false)
+
+  /// Credited focus, counted only while present and active
+  focusSeconds Int @default(0)
+  focusPoints  Int @default(0)
+
+  group StudySpace @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
   @@index([userId])
+  @@map("StudyGroupMember")
 }
 
-model GroupMessage {
+model RoomMessage {
   id         String   @id @default(cuid())
   groupId    String
   userId     String?
   authorName String
   text       String
   isAI       Boolean  @default(false)
-  /// "text" | "plan" | "quiz" | "system"
+  /// "text" | "plan" | "quiz" | "system" | "reaction"
   kind       String   @default("text")
   /// Serialised quiz payload when kind = "quiz"
   payload    String?
+  /// The message this one replies to
+  replyToId  String?
+  pinned     Boolean  @default(false)
   createdAt  DateTime @default(now())
 
-  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group StudySpace @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([groupId, createdAt])
+  @@map("GroupMessage")
 }
 
 model GroupSession {
@@ -479,9 +538,65 @@ model GroupSession {
   start   String
   minutes Int    @default(45)
 
-  group StudyGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group StudySpace @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@index([groupId])
+}
+
+/// One run of the focus/break cycle.
+///
+/// The server owns the clock. Clients render a countdown from phaseStartedAt
+/// plus the configured length, so every browser agrees without any of them
+/// being trusted to keep time.
+model StudySpaceSession {
+  id      String @id @default(cuid())
+  spaceId String
+
+  /// "focus" | "break" | "ended"
+  mode         String @default("focus")
+  currentRound Int    @default(1)
+  totalRounds  Int    @default(5)
+  studyMinutes Int    @default(50)
+  breakMinutes Int    @default(10)
+
+  /// When the current phase began. Null while paused.
+  phaseStartedAt DateTime?
+  /// Seconds already elapsed in this phase before the last pause
+  phaseElapsed   Int       @default(0)
+  paused         Boolean   @default(false)
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  /// Set once the recap has been written and personal progress credited.
+  /// Guards against a session being banked twice.
+  creditedAt DateTime?
+
+  space   StudySpace      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  credits SessionCredit[]
+
+  @@index([spaceId, startedAt])
+}
+
+/// What one member earned in one session.
+///
+/// StudySpaceMember.focusSeconds is a running total across every session the
+/// student has ever sat in that space, which is the wrong number for a recap.
+/// This records the per-session figure, so "you focused 3h 38m today" is a
+/// measurement rather than a subtraction of two totals.
+model SessionCredit {
+  id        String @id @default(cuid())
+  sessionId String
+  userId    String
+
+  seconds Int @default(0)
+  points  Int @default(0)
+  /// Focus rounds the student was present for
+  rounds  Int @default(0)
+
+  session StudySpaceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
 }
 
 model Friendship {

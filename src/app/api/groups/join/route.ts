@@ -17,20 +17,20 @@ export async function POST(request: Request) {
     const parsed = bodySchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) return jsonError(ERRORS.invalid, 400, "invalid_input");
 
-    const group = await db.studyGroup.findUnique({
+    const group = await db.studySpace.findUnique({
       where: { inviteCode: parsed.data.code.toUpperCase() },
     });
     if (!group) return jsonError("Kodi i ftesës nuk u gjet.", 404, "not_found");
 
-    const existing = await db.studyGroupMember.findUnique({
+    const existing = await db.studySpaceMember.findUnique({
       where: { groupId_userId: { groupId: group.id, userId: user.id } },
     });
 
     if (!existing) {
-      await db.studyGroupMember.create({
+      await db.studySpaceMember.create({
         data: { groupId: group.id, userId: user.id, state: "meson", lastSeen: new Date() },
       });
-      await db.groupMessage.create({
+      await db.roomMessage.create({
         data: {
           groupId: group.id,
           authorName: "Sistemi",

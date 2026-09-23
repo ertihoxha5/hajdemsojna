@@ -51,7 +51,7 @@ export async function loadAppState(userId: string, today: string): Promise<AppSt
       db.studyGoal.findMany({ where: { userId } }),
       db.availability.findMany({ where: { userId } }),
       db.notification.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 30 }),
-      db.studyGroupMember.findMany({
+      db.studySpaceMember.findMany({
         where: { userId },
         include: {
           group: {

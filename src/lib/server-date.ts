@@ -1,17 +1,18 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { iso } from "./date";
+import { TZ_COOKIE } from "./timezone";
 
-export const TZ_COOKIE = "hm_tz";
+export { TZ_COOKIE };
 
 /**
  * "Today" in the student's own timezone.
  *
  * A scheduling app must agree with the clock on the student's wall, not the
- * server's. A tiny script in the root layout stores the browser's UTC offset
- * in a cookie; this reads it so server-rendered dates match what the client
- * will compute after hydration. Falls back to server local time on the very
- * first request, before the cookie exists.
+ * server's. TimezoneProbe stores the browser's UTC offset in a cookie once
+ * it has hydrated; this reads it so server-rendered dates match what the
+ * client computes. Falls back to server local time on the very first
+ * request, before the cookie exists.
  */
 export async function getToday(): Promise<string> {
   const jar = await cookies();

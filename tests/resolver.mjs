@@ -58,3 +58,30 @@ export async function resolve(specifier, context, nextResolve) {
     throw error;
   }
 }
+
+/**
+ * Node's built-in type stripping handles .ts but not the JSX in .tsx, so
+ * those go through the TypeScript compiler that is already a dependency.
+ * This is what lets components be rendered and asserted on in tests rather
+ * than only their geometry.
+ */
+export async function load(url, context, nextLoad) {
+  if (!url.endsWith(".tsx")) return nextLoad(url, context);
+
+  const { readFile } = await import("node:fs/promises");
+  const { fileURLToPath } = await import("node:url");
+  const ts = (await import("typescript")).default;
+
+  const source = await readFile(fileURLToPath(url), "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      jsx: ts.JsxEmit.ReactJSX,
+      jsxImportSource: "react",
+    },
+    fileName: fileURLToPath(url),
+  });
+
+  return { format: "module", source: outputText, shortCircuit: true };
+}

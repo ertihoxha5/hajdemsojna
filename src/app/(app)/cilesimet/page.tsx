@@ -17,6 +17,7 @@ import {
 import { useStore } from "@/lib/store";
 import { signOutAction } from "@/server/auth-actions";
 import { VerifyEmailBanner } from "@/components/app/verify-email-banner";
+import { LinkedAccounts } from "@/components/app/linked-accounts";
 import { DAYS_LONG } from "@/lib/date";
 import type { DayIndex } from "@/lib/types";
 import {
@@ -303,6 +304,8 @@ export default function SettingsPage() {
                 Fshij llogarinë
               </Button>
             </div>
+
+            <LinkedAccounts />
 
             {/* Being able to leave with the data is the other half of being
                 able to delete the account. Plain links, so the browser handles

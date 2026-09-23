@@ -84,7 +84,7 @@ export async function buildExport(userId: string): Promise<ExportBundle> {
       include: { messages: { orderBy: { createdAt: "asc" } } },
       orderBy: { createdAt: "asc" },
     }),
-    db.studyGroupMember.findMany({
+    db.studySpaceMember.findMany({
       where: { userId },
       include: { group: { select: { id: true, name: true, about: true } } },
     }),

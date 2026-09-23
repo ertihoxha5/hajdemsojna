@@ -356,3 +356,55 @@ export async function testConnection(userId: string) {
     reply: reply.slice(0, 200),
   };
 }
+
+const RECAP_SYSTEM = `Ti përmbledh një sesion studimi në grup për Hajde Msojna.
+
+RREGULLA
+1. Shkruaj shqip, maksimum tre fjali. Pa emoji.
+2. Bazohu VETËM në numrat e dhënë. Mos shpik asgjë.
+3. Vëre theksin te grupi, jo te individët. Mos krahaso anëtarët me njëri-tjetrin
+   dhe mos përmend kush bëri më pak.
+4. Nëse një raund pati pjesëmarrje më të ulët, thuaje si vëzhgim asnjanës.
+5. Mbylle me një gjë konkrete për herën tjetër.`;
+
+/**
+ * The closing word on a group session.
+ *
+ * Fed only the numbers the app measured — minutes, rounds, how many people
+ * stayed. The prompt forbids comparing members, because a recap that names
+ * whoever did least is how a study group loses that person.
+ */
+export async function summariseGroupSession(
+  userId: string,
+  session: {
+    spaceName: string;
+    subject: string;
+    totalMinutes: number;
+    roundsDone: number;
+    roundsPlanned: number;
+    memberCount: number;
+    collectiveMinutes: number;
+    /** Attendance percentages, unnamed on purpose. */
+    attendance: number[];
+    goals: string[];
+  }
+): Promise<string> {
+  const { provider, creativity } = await resolveAI(userId);
+
+  const lines = [
+    `Hapësira: ${session.spaceName}${session.subject ? ` (${session.subject})` : ""}.`,
+    `Zgjati ${session.totalMinutes} minuta, ${session.roundsDone}/${session.roundsPlanned} raunde.`,
+    `${session.memberCount} anëtarë, gjithsej ${session.collectiveMinutes} minuta fokus.`,
+    session.attendance.length
+      ? `Pjesëmarrja për anëtar (pa emra): ${session.attendance.join("%, ")}%.`
+      : "",
+    session.goals.length ? `Objektivat e vendosura: ${session.goals.join("; ")}.` : "",
+  ].filter(Boolean);
+
+  return provider.generateText({
+    system: RECAP_SYSTEM,
+    messages: [{ role: "user", content: lines.join("\n") }],
+    creativity,
+    maxTokens: 400,
+  });
+}

@@ -14,6 +14,11 @@ import { Button, Card, EmptyState, cx } from "@/components/ui";
 /**
  * The review screen: one card at a time, answer hidden until asked for.
  *
+ * All of its state belongs to one run through one deck, so a new deck is a
+ * remount rather than a pile of resets — the caller gives it a `key`. That
+ * is React's own answer to "adjust state when props change", and it removes
+ * the whole class of bug where one of the four resets gets forgotten.
+ *
  * The four buttons show the interval each choice would produce, because a
  * student who can see that "Lehtë" means three weeks is far more likely to
  * grade themselves honestly than one who is guessing what the buttons do.
@@ -45,13 +50,6 @@ export function ReviewSession({ cards, today, onFinished }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(0);
   const [again, setAgain] = useState(0);
-
-  useEffect(() => {
-    setQueue(cards);
-    setRevealed(false);
-    setDone(0);
-    setAgain(0);
-  }, [cards]);
 
   const current = queue[0];
 

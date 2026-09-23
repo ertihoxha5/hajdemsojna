@@ -12,7 +12,7 @@ export function makeInviteCode(): string {
 
 /** Membership check used by every group endpoint before anything else. */
 export async function requireMembership(groupId: string, userId: string) {
-  const member = await db.studyGroupMember.findUnique({
+  const member = await db.studySpaceMember.findUnique({
     where: { groupId_userId: { groupId, userId } },
     include: { group: { include: { subject: true } } },
   });
@@ -28,7 +28,7 @@ export function isOnline(lastSeen: Date): boolean {
 }
 
 export async function touchPresence(groupId: string, userId: string) {
-  await db.studyGroupMember.updateMany({
+  await db.studySpaceMember.updateMany({
     where: { groupId, userId },
     data: { lastSeen: new Date() },
   });

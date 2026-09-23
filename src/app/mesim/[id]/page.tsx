@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   FileText,
@@ -69,30 +69,62 @@ function StudyMode({ params }: { params: Promise<{ id: string }> }) {
   const [panel, setPanel] = useState<string | null>(null);
   const [review, setReview] = useState(false);
 
-  // A new phase resets the clock to that phase's length.
+  /**
+   * Seconds already spent in this phase, banked when the clock is paused.
+   *
+   * The remaining time is derived from a start stamp plus what was banked,
+   * the same way the shared session clock works server-side. Deriving it
+   * means a new phase needs no state reset at all — the previous version
+   * reset `left` from an effect, which is a cascading render and drifts by
+   * however long the tab was asleep.
+   */
+  const phaseStartedAt = useRef(0);
+  const banked = useRef(0);
+
+  // Ref writes, so a new phase costs no extra render.
   useEffect(() => {
-    setLeft(plan.phases[phaseIndex]?.seconds ?? 0);
-  }, [phaseIndex, plan]);
+    phaseStartedAt.current = Date.now();
+    banked.current = 0;
+  }, [phaseIndex]);
 
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => {
-      setLeft((v) => {
-        if (v > 1) return v - 1;
 
-        // This phase is over. Move to the next one, or finish the session and
-        // ask how it went if this was the last.
-        if (phaseIndex < plan.phases.length - 1) {
-          setPhaseIndex((i) => i + 1);
-        } else {
-          setRunning(false);
-          setReview(true);
-        }
-        return 0;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [running, phaseIndex, plan.phases.length]);
+    if (phaseStartedAt.current === 0) phaseStartedAt.current = Date.now();
+
+    const tick = () => {
+      const seconds = plan.phases[phaseIndex]?.seconds ?? 0;
+      const spent =
+        banked.current +
+        Math.floor((Date.now() - phaseStartedAt.current) / 1000);
+      const remaining = Math.max(0, seconds - spent);
+
+      setLeft(remaining);
+      if (remaining > 0) return;
+
+      // This phase is over. Move to the next, or finish and ask how it went.
+      if (phaseIndex < plan.phases.length - 1) {
+        setPhaseIndex((i) => i + 1);
+      } else {
+        setRunning(false);
+        setReview(true);
+      }
+    };
+
+    const timer = setInterval(tick, 1000);
+    // Not called synchronously here: that would be a cascading render.
+    const immediate = setTimeout(tick, 0);
+
+    return () => {
+      clearInterval(timer);
+      clearTimeout(immediate);
+      // Bank what ran, so pausing does not lose it.
+      banked.current += Math.floor(
+        (Date.now() - phaseStartedAt.current) / 1000
+      );
+      phaseStartedAt.current = Date.now();
+    };
+  }, [running, phaseIndex, plan]);
 
   if (!session) {
     return (

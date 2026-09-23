@@ -62,6 +62,45 @@
   --shadow-lg: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
+/* No choice stored yet: follow the operating system, in pure CSS so there
+   is no flash and no script. A stored choice wins, because it carries the
+   data-theme attribute the server rendered. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+  --canvas: #0c0c10;
+  --surface: #141419;
+  --raised: #1b1b22;
+  --sunken: #101015;
+  --line: #26262f;
+  --line-soft: #1f1f27;
+  --ink: #f2f2f5;
+  --muted: #9a9aa8;
+  --faint: #6b6b7a;
+  --brand: #7b76ff;
+  --brand-deep: #9a96ff;
+  --brand-soft: #1e1c3a;
+  --ai: #948cff;
+  --ai-soft: #201d3d;
+  --mint: #3fe0bd;
+  --mint-deep: #6ff0d4;
+  --mint-soft: #0f2e29;
+  --ok: #3ec88d;
+  --ok-soft: #102b20;
+  --warn: #f0ad4a;
+  --warn-soft: #2e2413;
+  --bad: #ff6369;
+  --bad-soft: #2e1618;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 48px -12px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  html:not([data-theme]) {
+    color-scheme: dark;
+  }
+}
+
+
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);

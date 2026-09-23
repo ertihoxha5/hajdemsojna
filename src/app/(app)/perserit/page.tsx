@@ -17,7 +17,6 @@ import {
   Select,
   Stat,
   Textarea,
-  cx,
 } from "@/components/ui";
 import { ReviewSession, type ReviewCard } from "@/components/app/review-session";
 
@@ -61,9 +60,11 @@ export default function ReviewPage() {
   const [adding, setAdding] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  /** Fetches without touching state, so the effect body stays state-free. */
+  const fetchDeck = useCallback(async (): Promise<
+    | { ok: true; cards: CardWire[]; summary: Summary | null; today: string }
+    | { ok: false; error: string }
+  > => {
     try {
       const params = new URLSearchParams();
       if (tab === "perserit") params.set("scope", "due");
@@ -73,23 +74,52 @@ export default function ReviewPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(data.error ?? "Nuk u ngarkuan dot kartat.");
-        return;
+        return { ok: false, error: data.error ?? "Nuk u ngarkuan dot kartat." };
       }
 
-      setCards(data.cards ?? []);
-      setSummary(data.summary ?? null);
-      setToday(data.today ?? "");
+      return {
+        ok: true,
+        cards: data.cards ?? [],
+        summary: data.summary ?? null,
+        today: data.today ?? "",
+      };
     } catch {
-      setError("Lidhja dështoi. Kontrollo internetin dhe provo përsëri.");
-    } finally {
-      setLoading(false);
+      return {
+        ok: false,
+        error: "Lidhja dështoi. Kontrollo internetin dhe provo përsëri.",
+      };
     }
   }, [subjectId, tab]);
 
+  const apply = useCallback((result: Awaited<ReturnType<typeof fetchDeck>>) => {
+    if (!result.ok) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+    setError(null);
+    setCards(result.cards);
+    setSummary(result.summary);
+    setToday(result.today);
+    setLoading(false);
+  }, []);
+
+  /** Re-reads the deck. Called from handlers, never from an effect body. */
+  const load = useCallback(async () => {
+    apply(await fetchDeck());
+  }, [apply, fetchDeck]);
+
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+
+    void fetchDeck().then((result) => {
+      if (!cancelled) apply(result);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apply, fetchDeck]);
 
   const remove = async (id: string) => {
     setCards((cs) => cs.filter((c) => c.id !== id));
@@ -163,7 +193,13 @@ export default function ReviewPage() {
           Po ngarkoj kartat…
         </Card>
       ) : tab === "perserit" ? (
-        <ReviewSession cards={cards} today={today} onFinished={load} />
+        <ReviewSession
+          // A new deck is a fresh run: remount rather than reset piecemeal.
+          key={cards.map((c) => c.id).join(",")}
+          cards={cards}
+          today={today}
+          onFinished={load}
+        />
       ) : (
         <DeckList cards={cards} subjects={state.subjects} onRemove={remove} />
       )}
